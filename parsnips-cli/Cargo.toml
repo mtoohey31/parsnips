@@ -1,0 +1,19 @@
+[package]
+name = "parsnips-cli"
+version = "0.1.0"
+edition = "2021"
+authors = ["Matthew Toohey <contact@mtoohey.com>", "Nathan Gerryts <nathgerr@gmail.com>"]
+description = "CLI for parsnips MIPS tools."
+homepage = "https://github.com/mtoohey31/parsnips"
+repository = "https://github.com/mtoohey31/parsnips"
+
+default-run = "pn"
+
+[[bin]]
+name = "pn"
+path = "src/main.rs"
+
+[dependencies]
+parsnips-emu.path = "../parsnips-emu"
+
+clap = { version = "3", features = ["derive"] }

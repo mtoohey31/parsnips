@@ -1,0 +1,5 @@
+[workspace]
+
+members = [ "parsnips-parser", "parsnips-emu", "parsnips-cli" ]
+
+default-members = [ "parsnips-cli" ]

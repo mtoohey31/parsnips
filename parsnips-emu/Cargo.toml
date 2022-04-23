@@ -1,0 +1,11 @@
+[package]
+name = "parsnips-emu"
+version = "0.1.0"
+edition = "2021"
+authors = ["Matthew Toohey <contact@mtoohey.com>", "Nathan Gerryts <nathgerr@gmail.com>"]
+description = "Emulator for parsnips MIPS tools."
+homepage = "https://github.com/mtoohey31/parsnips"
+repository = "https://github.com/mtoohey31/parsnips"
+
+[dependencies]
+parsnips-parser.path = "../parsnips-parser"
