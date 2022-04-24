@@ -27,9 +27,11 @@ fn test_fibonacci() {
     //         .collect::<Vec<_>>()
     // );
 
+    let input = include_str!("./Fibonacci.asm").replace("\r\n", "\n");
+
     parses_to! {
         parser: MIPSParser,
-        input: include_str!("./Fibonacci.asm"),
+        input: &input,
         rule: Rule::file,
         tokens: [
             file(
