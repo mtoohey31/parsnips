@@ -1,0 +1,17 @@
+name: Check formatting and run tests
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  check_formatting_and_run_tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Check formatting
+      run: rustfmt --check $(find . -name '*.rs')
+    - name: Run tests
+      run: cargo test --workspace
