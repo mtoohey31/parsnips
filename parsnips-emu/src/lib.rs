@@ -27,6 +27,8 @@ impl Error for EmulatorError {}
 
 pub struct Emulator {
     registers: [u32; 32],
+    lo: u32,
+    hi: u32,
     // TODO: what are the possible values that need to be stored here?
     comparison_bit: bool,
     program: Vec<Inst>,
@@ -37,6 +39,8 @@ impl Emulator {
     pub const fn new(program: Vec<Inst>) -> Self {
         return Self {
             registers: [0; 32],
+            lo: 0,
+            hi: 0,
             comparison_bit: false,
             program,
             program_counter: 0,
@@ -85,6 +89,22 @@ impl Emulator {
 
                         self.registers[inst.rd()] =
                             self.registers[inst.rs()] & self.registers[inst.rt()];
+                    }
+                    DIV => {
+                        use inst::DivMultFields;
+
+                        self.lo = (self.registers[inst.rs()] as i32
+                            / self.registers[inst.rt()] as i32)
+                            as u32;
+                        self.hi = (self.registers[inst.rs()] as i32
+                            % self.registers[inst.rt()] as i32)
+                            as u32;
+                    }
+                    DIVU => {
+                        use inst::DivMultFields;
+
+                        self.lo = self.registers[inst.rs()] / self.registers[inst.rt()];
+                        self.hi = self.registers[inst.rs()] % self.registers[inst.rt()];
                     }
                     _ => todo!(),
                 }
@@ -207,6 +227,32 @@ mod tests {
             0b000000_00010_00011_00100_00101_100100
         ];
         assert_eq!(emu.registers[4], 0b1000000100101001);
+        Ok(())
+    }
+
+    // TODO: add tests that highlight the difference between div and divu
+
+    #[test]
+    fn div() -> RUE {
+        let emu = step_with![
+            0b001000_00000_00001_0000000000001011,
+            0b001000_00000_00010_0000000000000100,
+            0b000000_00001_00010_0000000000_011010
+        ];
+        assert_eq!(emu.lo, 2);
+        assert_eq!(emu.hi, 3);
+        Ok(())
+    }
+
+    #[test]
+    fn divu() -> RUE {
+        let emu = step_with![
+            0b001000_00000_00001_0000000000001011,
+            0b001000_00000_00010_0000000000000100,
+            0b000000_00001_00010_0000000000_011011
+        ];
+        assert_eq!(emu.lo, 2);
+        assert_eq!(emu.hi, 3);
         Ok(())
     }
 
