@@ -133,21 +133,8 @@ mod tests {
         };
     }
 
-    // TODO: add tests to check for overflows
-
-    #[test]
-    fn addi_pos() -> RUE {
-        let emu = step_with![0b001000_00000_00001_0111111111111111];
-        assert_eq!(emu.registers[1], i16::max_value() as u32);
-        Ok(())
-    }
-
-    #[test]
-    fn addi_neg() -> RUE {
-        let emu = step_with![0b001000_00000_00001_1111111111111111];
-        assert_eq!(emu.registers[1], -1 as i16 as i32 as u32);
-        Ok(())
-    }
+    // TODO: add tests to check for overflows once mults or shifts are
+    // implemented
 
     #[test]
     fn add_pos() -> RUE {
@@ -159,7 +146,6 @@ mod tests {
         assert_eq!(emu.registers[4], 3);
         Ok(())
     }
-
     #[test]
     fn add_neg() -> RUE {
         let emu = step_with![
@@ -168,6 +154,63 @@ mod tests {
             0b000000_00010_00011_00100_00101_100000
         ];
         assert_eq!(emu.registers[4], -2 as i32 as u32);
+        Ok(())
+    }
+    #[test]
+    fn add_big() -> RUE {
+        let emu = step_with![
+            0b001000_00000_00011_0111111111111111,
+            0b001000_00000_00010_0111111111111111,
+            0b000000_00010_00011_00100_00101_100000
+        ];
+        assert_eq!(emu.registers[4], u16::MAX as u32 - 1);
+        Ok(())
+    }
+
+    #[test]
+    fn addu_small() -> RUE {
+        let emu = step_with![
+            0b001001_00000_00011_0000000000000010,
+            0b001001_00000_00010_0000000000000001,
+            0b000000_00010_00011_00100_00101_100001
+        ];
+        assert_eq!(emu.registers[4], 3);
+        Ok(())
+    }
+    #[test]
+    fn addu_big() -> RUE {
+        let emu = step_with![
+            0b001001_00000_00011_1111111111111111,
+            0b001001_00000_00010_1111111111111111,
+            0b000000_00010_00011_00100_00101_100001
+        ];
+        assert_eq!(emu.registers[4], u16::MAX as u32 * 2);
+        Ok(())
+    }
+
+    #[test]
+    fn addi_pos() -> RUE {
+        let emu = step_with![0b001000_00000_00001_0111111111111111];
+        assert_eq!(emu.registers[1], i16::max_value() as u32);
+        Ok(())
+    }
+    #[test]
+    fn addi_neg() -> RUE {
+        let emu = step_with![0b001000_00000_00001_1111111111111111];
+        assert_eq!(emu.registers[1], -1 as i16 as i32 as u32);
+        Ok(())
+    }
+
+    #[test]
+    fn addiu_small() -> RUE {
+        let emu = step_with![0b001001_00000_00001_0000000000000111];
+        assert_eq!(emu.registers[1], 7);
+        Ok(())
+    }
+    #[test]
+    fn addiu_big() -> RUE {
+        let emu = step_with![0b001001_00000_00001_1111111111111111];
+        assert_eq!(emu.registers[1], u16::MAX as u32);
         Ok(())
     }
 
