@@ -8,4 +8,5 @@ homepage = "https://github.com/mtoohey31/parsnips"
 repository = "https://github.com/mtoohey31/parsnips"
 
 [dependencies]
+# needed for ast types of input programs to be emulated
 parsnips-parser.path = "../parsnips-parser"
