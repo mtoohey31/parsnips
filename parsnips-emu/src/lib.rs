@@ -7,10 +7,20 @@ use std::{error::Error, fmt};
 #[derive(Debug)]
 pub enum EmulatorError {
     Overflow,
+    JumpOutOfRange { pc: u32, max: usize },
 }
 impl fmt::Display for EmulatorError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "overflow occurred")
+        match self {
+            Self::Overflow => write!(f, "overflow occurred"),
+            Self::JumpOutOfRange { pc, max } => {
+                write!(
+                    f,
+                    "jump out of range {} for program with max address {}",
+                    pc, max
+                )
+            }
+        }
     }
 }
 impl Error for EmulatorError {}
@@ -20,7 +30,7 @@ pub struct Emulator {
     // TODO: what are the possible values that need to be stored here?
     comparison_bit: bool,
     program: Vec<Inst>,
-    program_counter: usize,
+    program_counter: u32,
 }
 
 impl Emulator {
@@ -36,8 +46,15 @@ impl Emulator {
     pub fn step(&mut self) -> Result<(), EmulatorError> {
         use inst::InstFields;
 
-        let inst = &self.program[self.program_counter];
-        self.program_counter += 1;
+        let inst_idx = (self.program_counter >> 2) as usize;
+        if inst_idx >= self.program.len() {
+            return Err(EmulatorError::JumpOutOfRange {
+                pc: self.program_counter,
+                max: (self.program.len() << 2) - 4,
+            });
+        }
+        let inst = &self.program[inst_idx];
+        self.program_counter += 4;
         match inst.op() {
             REG => {
                 use inst::function::*;
@@ -81,6 +98,11 @@ impl Emulator {
                 // NOTE: lack of casts back and forth ensure zero extension
                 self.registers[inst.rt()] =
                     unsafe { self.registers[inst.rs()].unchecked_add(inst.imm() as u32) };
+            }
+            J => {
+                use inst::JumpFields;
+
+                self.program_counter = (self.program_counter as i32 + inst.imm()) as u32;
             }
             _ => todo!(),
         }
@@ -146,6 +168,34 @@ mod tests {
             0b000000_00010_00011_00100_00101_100000
         ];
         assert_eq!(emu.registers[4], -2 as i32 as u32);
+        Ok(())
+    }
+
+    #[test]
+    fn j() -> RUE {
+        let emu = step_with![
+            0b001000_00001_00001_0000000000000001,
+            // jump negative 8 relative to what the PC would become, back to the
+            // first instruction
+            0b000010_11111111111111111111111000,
+            0b001000_00000_00010_0000000000000001
+        ];
+        assert_eq!(emu.registers[1], 2);
+        assert_eq!(emu.registers[2], 0);
+        Ok(())
+    }
+
+    #[test]
+    fn j_outofrange() -> RUE {
+        let mut emu = Emulator::new(vec![
+            0b000010_00000000000000000010000000,
+            0b000000_00000_00000_0000000000000000,
+        ]);
+        emu.step()?;
+        assert!(match emu.step() {
+            Err(EmulatorError::JumpOutOfRange { pc: 132, max: 4 }) => true,
+            _ => false,
+        });
         Ok(())
     }
 }

@@ -178,7 +178,7 @@ impl LoadIFields for Inst {
 pub trait BranchFields {
     fn rs(&self) -> usize;
     fn rt(&self) -> usize;
-    fn label(&self, curr: u32) -> u32;
+    fn imm(&self) -> i32;
 }
 impl BranchFields for Inst {
     #[inline(always)]
@@ -190,14 +190,14 @@ impl BranchFields for Inst {
         (self >> 16 & MASK5) as usize
     }
     #[inline(always)]
-    fn label(&self, curr: u32) -> u32 {
-        (self & MASK16 - (curr + 4)) >> 2
+    fn imm(&self) -> i32 {
+        (self & MASK16) as i16 as i32
     }
 }
 
 pub trait BranchZFields {
     fn rs(&self) -> usize;
-    fn label(&self, curr: u32) -> u32;
+    fn imm(&self) -> i32;
 }
 impl BranchZFields for Inst {
     #[inline(always)]
@@ -205,8 +205,8 @@ impl BranchZFields for Inst {
         (self >> 21 & MASK5) as usize
     }
     #[inline(always)]
-    fn label(&self, curr: u32) -> u32 {
-        (self & MASK16 - (curr + 4)) >> 2
+    fn imm(&self) -> i32 {
+        (self & MASK16) as i16 as i32
     }
 }
 
@@ -233,12 +233,12 @@ impl LoadStoreFields for Inst {
 // jump encodings
 
 pub trait JumpFields {
-    fn label(&self, curr: u32) -> u32;
+    fn imm(&self) -> i32;
 }
 impl JumpFields for Inst {
     #[inline(always)]
-    fn label(&self, curr: u32) -> u32 {
-        (self & MASK26 - (curr + 4)) >> 2
+    fn imm(&self) -> i32 {
+        ((self & MASK26) << 6) as i32 >> 6
     }
 }
 
