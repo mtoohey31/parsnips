@@ -35,9 +35,8 @@ impl Emulator {
                     ADD => {
                         use inst::ArithLogFields;
 
-                        self.registers[inst.rd() as usize] = unsafe {
-                            self.registers[inst.rs() as usize]
-                                .unchecked_add(self.registers[inst.rt() as usize])
+                        self.registers[inst.rd()] = unsafe {
+                            self.registers[inst.rs()].unchecked_add(self.registers[inst.rt()])
                         }
                     }
                     _ => todo!(),
@@ -46,9 +45,8 @@ impl Emulator {
             ADDI => {
                 use inst::ArithLogIFields;
 
-                let imm = inst.imm();
-                self.registers[inst.rt() as usize] =
-                    self.registers[inst.rs() as usize] + imm as i16 as i32 as u32;
+                self.registers[inst.rt()] =
+                    self.registers[inst.rs()] + inst.imm() as i16 as i32 as u32;
             }
             _ => todo!(),
         }
