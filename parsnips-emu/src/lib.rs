@@ -169,6 +169,7 @@ mod tests {
 
     #[test]
     fn add_pos() -> RUE {
+        #[allow(unused)]
         let emu = step_with![
             0b001000_00000_00011_0000000000000000 | 2,
             0b001000_00000_00010_0000000000000000 | 1,
@@ -179,6 +180,7 @@ mod tests {
     }
     #[test]
     fn add_neg() -> RUE {
+        #[allow(unused)]
         let emu = step_with![
             0b001000_00000_00011_0000000000000000 | (-1 as i16 as u16 as u32),
             0b001000_00000_00010_0000000000000000 | (-1 as i16 as u16 as u32),
@@ -189,6 +191,7 @@ mod tests {
     }
     #[test]
     fn add_big() -> RUE {
+        #[allow(unused)]
         let emu = step_with![
             0b001000_00000_00011_0000000000000000 | (i16::MAX as u32),
             0b001000_00000_00010_0000000000000000 | (i16::MAX as u32),
@@ -200,6 +203,7 @@ mod tests {
 
     #[test]
     fn addu_small() -> RUE {
+        #[allow(unused)]
         let emu = step_with![
             0b001001_00000_00011_0000000000000000 | 2,
             0b001001_00000_00010_0000000000000000 | 1,
@@ -210,6 +214,7 @@ mod tests {
     }
     #[test]
     fn addu_big() -> RUE {
+        #[allow(unused)]
         let emu = step_with![
             0b001001_00000_00011_0000000000000000 | (u16::MAX as u32),
             0b001001_00000_00010_0000000000000000 | (u16::MAX as u32),
@@ -234,6 +239,7 @@ mod tests {
 
     #[test]
     fn div() -> RUE {
+        #[allow(unused)]
         let emu = step_with![
             0b001000_00000_00001_0000000000000000 | 11,
             0b001000_00000_00010_0000000000000000 | 4,
@@ -246,6 +252,7 @@ mod tests {
 
     #[test]
     fn divu() -> RUE {
+        #[allow(unused)]
         let emu = step_with![
             0b001000_00000_00001_0000000000000000 | 11,
             0b001000_00000_00010_0000000000000000 | 4,
@@ -258,12 +265,14 @@ mod tests {
 
     #[test]
     fn addi_pos() -> RUE {
+        #[allow(unused)]
         let emu = step_with![0b001000_00000_00001_0000000000000000 | (i16::MAX as u32)];
         assert_eq!(emu.registers[1], i16::MAX as u32);
         Ok(())
     }
     #[test]
     fn addi_neg() -> RUE {
+        #[allow(unused)]
         let emu = step_with![0b001000_00000_00001_0000000000000000 | (-1 as i16 as u16 as u32)];
         assert_eq!(emu.registers[1], -1 as i16 as i32 as u32);
         Ok(())
@@ -271,12 +280,14 @@ mod tests {
 
     #[test]
     fn addiu_small() -> RUE {
+        #[allow(unused)]
         let emu = step_with![0b001001_00000_00001_0000000000000000 | 7];
         assert_eq!(emu.registers[1], 7);
         Ok(())
     }
     #[test]
     fn addiu_big() -> RUE {
+        #[allow(unused)]
         let emu = step_with![0b001001_00000_00001_0000000000000000 | (u16::MAX as u32)];
         assert_eq!(emu.registers[1], u16::MAX as u32);
         Ok(())
@@ -294,6 +305,7 @@ mod tests {
 
     #[test]
     fn j() -> RUE {
+        #[allow(unused)]
         let emu = step_with![
             0b001000_00001_00001_0000000000000000 | 1,
             // jump negative 8 relative to what the PC would become, back to the
