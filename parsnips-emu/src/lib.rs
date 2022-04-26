@@ -43,6 +43,13 @@ impl Emulator {
                     _ => todo!(),
                 }
             }
+            ADDI => {
+                use inst::ArithLogIFields;
+
+                let imm = inst.imm();
+                self.registers[inst.rt() as usize] =
+                    self.registers[inst.rs() as usize] + imm as i16 as i32 as u32;
+            }
             _ => todo!(),
         }
     }
@@ -52,10 +59,50 @@ impl Emulator {
 mod tests {
     use super::*;
 
+    macro_rules! step_with {
+        ( $( $x:expr ),* ) => {
+            {
+                let mut emu = Emulator::new(vec![$(
+                    $x,
+                )*]);
+                $(
+                    $x;
+                    emu.step();
+                )*
+                emu
+            }
+        };
+    }
+
     #[test]
-    fn test() {
-        let mut emu = Emulator::new(vec![0b000000_00010_00011_00100_00101_100000]);
-        emu.step();
-        assert_eq!(emu.registers[4], 0);
+    fn addi_pos() {
+        let emu = step_with![0b001000_00000_00001_0111111111111111];
+        assert_eq!(emu.registers[1], i16::max_value() as u32);
+    }
+
+    #[test]
+    fn addi_neg() {
+        let emu = step_with![0b001000_00000_00001_1111111111111111];
+        assert_eq!(emu.registers[1], -1 as i16 as i32 as u32);
+    }
+
+    #[test]
+    fn add_pos() {
+        let emu = step_with![
+            0b001000_00000_00011_0000000000000010,
+            0b001000_00000_00010_0000000000000001,
+            0b000000_00010_00011_00100_00101_100000
+        ];
+        assert_eq!(emu.registers[4], 3);
+    }
+
+    #[test]
+    fn add_neg() {
+        let emu = step_with![
+            0b001000_00000_00011_1111111111111111,
+            0b001000_00000_00010_1111111111111111,
+            0b000000_00010_00011_00100_00101_100000
+        ];
+        assert_eq!(emu.registers[4], -2 as i32 as u32);
     }
 }
