@@ -1,3 +1,5 @@
+#![feature(unchecked_math)]
+
 mod inst;
 use inst::{opcode::*, Inst};
 
@@ -23,7 +25,7 @@ impl Emulator {
         use inst::InstFields;
 
         let inst = &self.program[self.program_counter];
-        println!("{:#08b}", inst.op());
+        self.program_counter += 1;
         match inst.op() {
             REG => {
                 use inst::function::*;
@@ -33,8 +35,10 @@ impl Emulator {
                     ADD => {
                         use inst::ArithLogFields;
 
-                        self.registers[inst.rd() as usize] =
-                            self.registers[inst.rs() as usize] + self.registers[inst.rt() as usize];
+                        self.registers[inst.rd() as usize] = unsafe {
+                            self.registers[inst.rs() as usize]
+                                .unchecked_add(self.registers[inst.rt() as usize])
+                        }
                     }
                     _ => todo!(),
                 }
