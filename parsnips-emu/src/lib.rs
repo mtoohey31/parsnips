@@ -71,14 +71,20 @@ impl Emulator {
                         {
                             Some(s) => self.registers[inst.rd()] = s as u32,
                             None => return Err(EmulatorError::Overflow),
-                        }
+                        };
                     }
                     ADDU => {
                         use inst::ArithLogFields;
 
                         self.registers[inst.rd()] = unsafe {
                             self.registers[inst.rs()].unchecked_add(self.registers[inst.rt()])
-                        }
+                        };
+                    }
+                    AND => {
+                        use inst::ArithLogFields;
+
+                        self.registers[inst.rd()] =
+                            self.registers[inst.rs()] & self.registers[inst.rt()];
                     }
                     _ => todo!(),
                 }
@@ -90,7 +96,7 @@ impl Emulator {
                 match (self.registers[inst.rs()] as i32).checked_add(inst.imm() as i16 as i32) {
                     Some(s) => self.registers[inst.rt()] = s as u32,
                     None => return Err(EmulatorError::Overflow),
-                }
+                };
             }
             ADDIU => {
                 use inst::ArithLogIFields;
@@ -185,6 +191,17 @@ mod tests {
             0b000000_00010_00011_00100_00101_100001
         ];
         assert_eq!(emu.registers[4], u16::MAX as u32 * 2);
+        Ok(())
+    }
+
+    #[test]
+    fn and() -> RUE {
+        let emu = step_with![
+            0b001001_00000_00011_1000001101101001,
+            0b001001_00000_00010_1011000100111011,
+            0b000000_00010_00011_00100_00101_100100
+        ];
+        assert_eq!(emu.registers[4], 0b1000000100101001);
         Ok(())
     }
 
