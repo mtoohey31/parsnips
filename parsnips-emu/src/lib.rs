@@ -105,6 +105,11 @@ impl Emulator {
                 self.registers[inst.rt()] =
                     unsafe { self.registers[inst.rs()].unchecked_add(inst.imm() as u32) };
             }
+            ANDI => {
+                use inst::ArithLogIFields;
+
+                self.registers[inst.rt()] = self.registers[inst.rs()] & inst.imm() as u32;
+            }
             J => {
                 use inst::JumpFields;
 
@@ -232,6 +237,16 @@ mod tests {
     }
 
     #[test]
+    fn andi() -> RUE {
+        let emu = step_with![
+            0b001001_00000_00001_1000001101101001,
+            0b001100_00001_00010_1011000100111011
+        ];
+        assert_eq!(emu.registers[2], 0b1000000100101001);
+        Ok(())
+    }
+
+    #[test]
     fn j() -> RUE {
         let emu = step_with![
             0b001000_00001_00001_0000000000000001,
@@ -244,7 +259,6 @@ mod tests {
         assert_eq!(emu.registers[2], 0);
         Ok(())
     }
-
     #[test]
     fn j_outofrange() -> RUE {
         let mut emu = Emulator::new(vec![
