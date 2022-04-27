@@ -174,6 +174,19 @@ impl Emulator {
 
                 self.registers[inst.rt()] = self.registers[inst.rs()] ^ inst.imm() as u32;
             }
+            // PERF: figure out if unsafe and pointer hyjinks can speed LHI and LLO up
+            LHI => {
+                use inst::LoadIFields;
+
+                self.registers[inst.rt()] &= u16::MAX as u32;
+                self.registers[inst.rt()] |= (inst.imm() as u32) << 16;
+            }
+            LLO => {
+                use inst::LoadIFields;
+
+                self.registers[inst.rt()] &= (u16::MAX as u32) << 16;
+                self.registers[inst.rt()] |= inst.imm() as u32;
+            }
             J => {
                 use inst::JumpFields;
 
@@ -421,6 +434,42 @@ mod tests {
             0b001110_00001_00010_1010101000101100
         ];
         assert_eq!(emu.registers[2], 0b0110101100100001);
+        Ok(())
+    }
+
+    #[test]
+    fn lhi() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![0b011001_00000_00001_0000000000000000 | 17];
+        assert_eq!(emu.registers[1], 17 << 16);
+        Ok(())
+    }
+    #[test]
+    fn lhi_then_llo() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b011001_00000_00001_0000000000000000 | 17,
+            0b011000_00000_00001_0000000000000000 | 17
+        ];
+        assert_eq!(emu.registers[1], (17 << 16) + 17);
+        Ok(())
+    }
+
+    #[test]
+    fn llo() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![0b011000_00000_00001_0000000000000000 | 17];
+        assert_eq!(emu.registers[1], 17);
+        Ok(())
+    }
+    #[test]
+    fn llo_then_lhi() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b011000_00000_00001_0000000000000000 | 17,
+            0b011001_00000_00001_0000000000000000 | 17
+        ];
+        assert_eq!(emu.registers[1], (17 << 16) + 17);
         Ok(())
     }
 
