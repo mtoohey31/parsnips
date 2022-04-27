@@ -134,6 +134,12 @@ impl Emulator {
                         self.registers[inst.rd()] =
                             self.registers[inst.rs()] | self.registers[inst.rt()];
                     }
+                    XOR => {
+                        use inst::ArithLogFields;
+
+                        self.registers[inst.rd()] =
+                            self.registers[inst.rs()] ^ self.registers[inst.rt()];
+                    }
                     _ => todo!(),
                 }
             }
@@ -162,6 +168,11 @@ impl Emulator {
                 use inst::ArithLogIFields;
 
                 self.registers[inst.rt()] = self.registers[inst.rs()] | inst.imm() as u32;
+            }
+            XORI => {
+                use inst::ArithLogIFields;
+
+                self.registers[inst.rt()] = self.registers[inst.rs()] ^ inst.imm() as u32;
             }
             J => {
                 use inst::JumpFields;
@@ -389,6 +400,27 @@ mod tests {
             0b001101_00001_00010_1010101000101100
         ];
         assert_eq!(emu.registers[2], 0b1110101100101101);
+        Ok(())
+    }
+
+    #[test]
+    fn xor() -> RUE {
+        let emu = step_with![
+            0b001001_00000_00001_1100000100001101,
+            0b001001_00000_00010_1010101000101100,
+            0b000000_00001_00010_00011_00000_100110
+        ];
+        assert_eq!(emu.registers[3], 0b0110101100100001);
+        Ok(())
+    }
+
+    #[test]
+    fn xori() -> RUE {
+        let emu = step_with![
+            0b001001_00000_00001_1100000100001101,
+            0b001110_00001_00010_1010101000101100
+        ];
+        assert_eq!(emu.registers[2], 0b0110101100100001);
         Ok(())
     }
 
