@@ -106,6 +106,22 @@ impl Emulator {
                         self.lo = self.registers[inst.rs()] / self.registers[inst.rt()];
                         self.hi = self.registers[inst.rs()] % self.registers[inst.rt()];
                     }
+                    MULT => {
+                        use inst::DivMultFields;
+
+                        let res = self.registers[inst.rs()] as i32 as i64
+                            * self.registers[inst.rt()] as i32 as i64;
+                        self.hi = (res / (u32::MAX as i64 + 1)) as u32;
+                        self.lo = (res % (u32::MAX as i64 + 1)) as u32;
+                    }
+                    MULTU => {
+                        use inst::DivMultFields;
+
+                        let res =
+                            self.registers[inst.rs()] as u64 * self.registers[inst.rt()] as u64;
+                        self.hi = (res / (u32::MAX as u64 + 1)) as u32;
+                        self.lo = (res % (u32::MAX as u64 + 1)) as u32;
+                    }
                     _ => todo!(),
                 }
             }
@@ -260,6 +276,70 @@ mod tests {
         ];
         assert_eq!(emu.lo, 2);
         assert_eq!(emu.hi, 3);
+        Ok(())
+    }
+
+    #[test]
+    fn mult_pos() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 11,
+            0b001000_00000_00010_0000000000000000 | 4,
+            0b000000_00001_00010_0000000000_011000
+        ];
+        assert_eq!(emu.lo, 44);
+        assert_eq!(emu.hi, 0);
+        Ok(())
+    }
+    #[test]
+    fn mult_neg() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | (-11 as i16 as u16 as u32),
+            0b001000_00000_00010_0000000000000000 | 4,
+            0b000000_00001_00010_0000000000_011000
+        ];
+        assert_eq!(emu.lo, -44 as i32 as u32);
+        assert_eq!(emu.hi, 0);
+        Ok(())
+    }
+    #[test]
+    fn mult_big() -> RUE {
+        // TODO: make these bigger when shifts are added
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | (i16::MAX as u16 as u32),
+            0b001000_00000_00010_0000000000000000 | (i16::MAX as u16 as u32),
+            0b000000_00001_00010_0000000000_011000
+        ];
+        assert_eq!(emu.lo, i16::MAX as u32 * i16::MAX as u32);
+        assert_eq!(emu.hi, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn multu_small() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 7,
+            0b001000_00000_00010_0000000000000000 | 3,
+            0b000000_00001_00010_0000000000_011001
+        ];
+        assert_eq!(emu.lo, 21);
+        assert_eq!(emu.hi, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn multu_big() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | (-1 as i16 as u16 as u32),
+            0b001000_00000_00010_0000000000000000 | (-1 as i16 as u16 as u32),
+            0b000000_00001_00010_0000000000_011001
+        ];
+        assert_eq!(emu.lo, 1);
+        assert_eq!(emu.hi, 4294967294);
         Ok(())
     }
 
