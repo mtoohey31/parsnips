@@ -122,6 +122,12 @@ impl Emulator {
                         self.hi = (res / (u32::MAX as u64 + 1)) as u32;
                         self.lo = (res % (u32::MAX as u64 + 1)) as u32;
                     }
+                    NOR => {
+                        use inst::ArithLogFields;
+
+                        self.registers[inst.rd()] =
+                            !(self.registers[inst.rs()] | self.registers[inst.rt()]);
+                    }
                     _ => todo!(),
                 }
             }
@@ -340,6 +346,17 @@ mod tests {
         ];
         assert_eq!(emu.lo, 1);
         assert_eq!(emu.hi, 4294967294);
+        Ok(())
+    }
+
+    #[test]
+    fn nor() -> RUE {
+        let emu = step_with![
+            0b001000_00000_00001_1100000100001101,
+            0b001001_00000_00010_1010101000101100,
+            0b000000_00001_00010_00011_00000_100111
+        ];
+        assert_eq!(emu.registers[3], 0b0001010011010010);
         Ok(())
     }
 
