@@ -212,6 +212,12 @@ impl Emulator {
 
                         self.program_counter = self.registers[inst.rs()];
                     }
+                    JALR => {
+                        use inst::JumpRFields;
+
+                        self.registers[31] = self.program_counter;
+                        self.program_counter = self.registers[inst.rs()];
+                    }
                     _ => todo!(),
                 }
             }
@@ -262,6 +268,12 @@ impl Emulator {
             J => {
                 use inst::JumpFields;
 
+                self.program_counter = (self.program_counter as i32 + inst.imm()) as u32;
+            }
+            JAL => {
+                use inst::JumpFields;
+
+                self.registers[31] = self.program_counter;
                 self.program_counter = (self.program_counter as i32 + inst.imm()) as u32;
             }
             _ => todo!(),
@@ -797,6 +809,37 @@ mod tests {
         ];
         assert_eq!(emu.registers[1], 2);
         assert_eq!(emu.registers[2], 0);
+        Ok(())
+    }
+
+    #[test]
+    fn jal() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00001_00001_0000000000000000 | 1,
+            // jump negative 8 relative to what the PC would become, back to the
+            // first instruction
+            0b000011_11111111111111111111111000,
+            0b001000_00000_00010_0000000000000000 | 1
+        ];
+        assert_eq!(emu.registers[1], 2);
+        assert_eq!(emu.registers[2], 0);
+        assert_eq!(emu.registers[31], 8);
+        Ok(())
+    }
+
+    #[test]
+    fn jalr() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00001_00001_0000000000000000 | 1,
+            // jump to position 0
+            0b000000_00000_00000_00000_00000_001001,
+            0b001000_00000_00010_0000000000000000 | 1
+        ];
+        assert_eq!(emu.registers[1], 2);
+        assert_eq!(emu.registers[2], 0);
+        assert_eq!(emu.registers[31], 8);
         Ok(())
     }
 }
