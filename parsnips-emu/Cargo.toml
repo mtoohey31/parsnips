@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Matthew Toohey <contact@mtoohey.com>", "Nathan Gerryts <nathgerr@gmail.com>"]
 description = "Emulator for parsnips MIPS tools."
+readme = "../README.md"
 homepage = "https://github.com/mtoohey31/parsnips"
 repository = "https://github.com/mtoohey31/parsnips"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 # needed for ast types of input programs to be emulated
