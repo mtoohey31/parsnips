@@ -299,6 +299,25 @@ impl Emulator {
                 self.registers[31] = self.program_counter;
                 self.program_counter = (self.program_counter as i32 + inst.imm()) as u32;
             }
+            SLTI => {
+                use inst::ArithLogIFields;
+
+                self.registers[inst.rt()] =
+                    if (self.registers[inst.rs()] as i32) < (inst.imm() as i16 as i32) {
+                        1
+                    } else {
+                        0
+                    };
+            }
+            SLTIU => {
+                use inst::ArithLogIFields;
+
+                self.registers[inst.rt()] = if self.registers[inst.rs()] < inst.imm() as u32 {
+                    1
+                } else {
+                    0
+                };
+            }
             _ => todo!(),
         };
 
@@ -953,6 +972,88 @@ mod tests {
             0b000000_00001_00010_00011_00000_101001
         ];
         assert_eq!(emu.registers[3], 0);
+        Ok(())
+    }
+
+    #[test]
+    fn slti_lt() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 1,
+            0b001010_00001_00010_0000000000000000 | 2
+        ];
+        assert_eq!(emu.registers[2], 1);
+        Ok(())
+    }
+    #[test]
+    fn slti_eq() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 1,
+            0b001010_00001_00010_0000000000000000 | 1
+        ];
+        assert_eq!(emu.registers[2], 0);
+        Ok(())
+    }
+    #[test]
+    fn slti_gt() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 2,
+            0b001010_00001_00010_0000000000000000 | 1
+        ];
+        assert_eq!(emu.registers[2], 0);
+        Ok(())
+    }
+    #[test]
+    fn slti_neg() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | -1 as i16 as u16 as u32,
+            0b001010_00001_00010_0000000000000000 | 1
+        ];
+        assert_eq!(emu.registers[2], 1);
+        Ok(())
+    }
+
+    #[test]
+    fn sltiu_lt() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 1,
+            0b001011_00001_00010_0000000000000000 | 2
+        ];
+        assert_eq!(emu.registers[2], 1);
+        Ok(())
+    }
+    #[test]
+    fn sltiu_eq() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 1,
+            0b001011_00001_00010_0000000000000000 | 1
+        ];
+        assert_eq!(emu.registers[2], 0);
+        Ok(())
+    }
+    #[test]
+    fn sltiu_gt() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 2,
+            0b001011_00001_00010_0000000000000000 | 1
+        ];
+        assert_eq!(emu.registers[2], 0);
+        Ok(())
+    }
+    #[test]
+    fn sltiu_neg() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | -1 as i16 as u16 as u32,
+            0b001011_00001_00010_0000000000000000 | 1
+        ];
+        assert_eq!(emu.registers[2], 0);
         Ok(())
     }
 
