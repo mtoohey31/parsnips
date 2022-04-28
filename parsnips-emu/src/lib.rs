@@ -140,6 +140,26 @@ impl Emulator {
                         self.registers[inst.rd()] =
                             self.registers[inst.rs()] ^ self.registers[inst.rt()];
                     }
+                    MFHI => {
+                        use inst::MoveFromFields;
+
+                        self.registers[inst.rd()] = self.hi;
+                    }
+                    MFLO => {
+                        use inst::MoveFromFields;
+
+                        self.registers[inst.rd()] = self.lo;
+                    }
+                    MTHI => {
+                        use inst::MoveToFields;
+
+                        self.hi = self.registers[inst.rs()];
+                    }
+                    MTLO => {
+                        use inst::MoveToFields;
+
+                        self.lo = self.registers[inst.rs()];
+                    }
                     _ => todo!(),
                 }
             }
@@ -470,6 +490,32 @@ mod tests {
             0b011001_00000_00001_0000000000000000 | 17
         ];
         assert_eq!(emu.registers[1], (17 << 16) + 17);
+        Ok(())
+    }
+
+    #[test]
+    fn mtfhi() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 31,
+            0b000000_00001_00000_00000_00000_010001,
+            0b000000_00000_00000_00010_00000_010000
+        ];
+        assert_eq!(emu.hi, 31);
+        assert_eq!(emu.registers[2], 31);
+        Ok(())
+    }
+
+    #[test]
+    fn mtflo() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 31,
+            0b000000_00001_00000_00000_00000_010011,
+            0b000000_00000_00000_00010_00000_010010
+        ];
+        assert_eq!(emu.lo, 31);
+        assert_eq!(emu.registers[2], 31);
         Ok(())
     }
 
