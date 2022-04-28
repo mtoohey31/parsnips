@@ -194,6 +194,19 @@ impl Emulator {
                         self.registers[inst.rd()] =
                             self.registers[inst.rt()] >> self.registers[inst.rs()];
                     }
+                    SUB => {
+                        use inst::ArithLogFields;
+
+                        self.registers[inst.rd()] = (self.registers[inst.rs()] as i32
+                            - self.registers[inst.rt()] as i32)
+                            as u32;
+                    }
+                    SUBU => {
+                        use inst::ArithLogFields;
+
+                        self.registers[inst.rd()] =
+                            self.registers[inst.rs()] - self.registers[inst.rt()];
+                    }
                     _ => todo!(),
                 }
             }
@@ -640,6 +653,63 @@ mod tests {
             0b000000_00010_00001_00001_00000_000110
         ];
         assert_eq!(emu.registers[1], ((-2 as i32) << 4) as u32 >> 15);
+        Ok(())
+    }
+
+    #[test]
+    fn sub_pos() -> RUE {
+        let minuend = 159;
+        let subtrahend = 61;
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | minuend,
+            0b001000_00000_00010_0000000000000000 | subtrahend,
+            0b000000_00001_00010_00011_00000_100010
+        ];
+        assert_eq!(emu.registers[3], minuend - subtrahend);
+        Ok(())
+    }
+    #[test]
+    fn sub_neg() -> RUE {
+        let minuend: i16 = -61;
+        let subtrahend: i16 = -159;
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | minuend as u16 as u32,
+            0b001000_00000_00010_0000000000000000 | subtrahend as u16 as u32,
+            0b000000_00001_00010_00011_00000_100010
+        ];
+        assert_eq!(emu.registers[3], (minuend - subtrahend) as i32 as u32);
+        Ok(())
+    }
+
+    #[test]
+    fn subu_pos() -> RUE {
+        let minuend = 159;
+        let subtrahend = 61;
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | minuend,
+            0b001000_00000_00010_0000000000000000 | subtrahend,
+            0b000000_00001_00010_00011_00000_100011
+        ];
+        assert_eq!(emu.registers[3], minuend - subtrahend);
+        Ok(())
+    }
+    #[test]
+    fn subu_neg() -> RUE {
+        let minuend: i16 = -61;
+        let subtrahend: i16 = -159;
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | minuend as u16 as u32,
+            0b001000_00000_00010_0000000000000000 | subtrahend as u16 as u32,
+            0b000000_00001_00010_00011_00000_100011
+        ];
+        assert_eq!(
+            emu.registers[3],
+            minuend as i32 as u32 - subtrahend as i32 as u32
+        );
         Ok(())
     }
 
