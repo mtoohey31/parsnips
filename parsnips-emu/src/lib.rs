@@ -6,13 +6,14 @@ use std::{error::Error, fmt};
 
 #[derive(Debug)]
 pub enum EmulatorError {
-    Overflow,
+    InvalidFunct(u8),
     JumpOutOfRange { pc: u32, max: usize },
+    Overflow,
 }
 impl fmt::Display for EmulatorError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Overflow => write!(f, "overflow occurred"),
+            Self::InvalidFunct(funct) => write!(f, "invalid function {:#08b}", funct),
             Self::JumpOutOfRange { pc, max } => {
                 write!(
                     f,
@@ -20,6 +21,7 @@ impl fmt::Display for EmulatorError {
                     pc, max
                 )
             }
+            Self::Overflow => write!(f, "overflow occurred"),
         }
     }
 }
@@ -239,7 +241,7 @@ impl Emulator {
                                 0
                             };
                     }
-                    _ => todo!(),
+                    _ => return Err(EmulatorError::InvalidFunct(inst.funct())),
                 }
             }
             ADDI => {
@@ -951,6 +953,16 @@ mod tests {
             0b000000_00001_00010_00011_00000_101001
         ];
         assert_eq!(emu.registers[3], 0);
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_funct() -> RUE {
+        let mut emu = Emulator::new(vec![0b000000_00000_00000_00000_00000_111111]);
+        assert!(match emu.step() {
+            Err(EmulatorError::InvalidFunct(0b111111)) => true,
+            _ => false,
+        });
         Ok(())
     }
 }
