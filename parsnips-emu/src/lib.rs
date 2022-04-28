@@ -160,6 +160,40 @@ impl Emulator {
 
                         self.lo = self.registers[inst.rs()];
                     }
+                    SLL => {
+                        use inst::ShiftFields;
+
+                        self.registers[inst.rd()] = self.registers[inst.rt()] << inst.shamt();
+                    }
+                    SLLV => {
+                        use inst::ShiftVFields;
+
+                        self.registers[inst.rd()] =
+                            self.registers[inst.rt()] << self.registers[inst.rs()];
+                    }
+                    SRA => {
+                        use inst::ShiftFields;
+
+                        self.registers[inst.rd()] =
+                            (self.registers[inst.rt()] as i32 >> inst.shamt()) as u32;
+                    }
+                    SRAV => {
+                        use inst::ShiftVFields;
+
+                        self.registers[inst.rd()] =
+                            (self.registers[inst.rt()] as i32 >> self.registers[inst.rs()]) as u32;
+                    }
+                    SRL => {
+                        use inst::ShiftFields;
+
+                        self.registers[inst.rd()] = self.registers[inst.rt()] >> inst.shamt();
+                    }
+                    SRLV => {
+                        use inst::ShiftVFields;
+
+                        self.registers[inst.rd()] =
+                            self.registers[inst.rt()] >> self.registers[inst.rs()];
+                    }
                     _ => todo!(),
                 }
             }
@@ -516,6 +550,75 @@ mod tests {
         ];
         assert_eq!(emu.lo, 31);
         assert_eq!(emu.registers[2], 31);
+        Ok(())
+    }
+
+    #[test]
+    fn sll() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 31,
+            0b000000_00000_00001_00001_00111_000000
+        ];
+        assert_eq!(emu.registers[1], 31 << 7);
+        Ok(())
+    }
+
+    #[test]
+    fn sllv() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 31,
+            0b001000_00000_00010_0000000000000000 | 7,
+            0b000000_00010_00001_00001_00000_000100
+        ];
+        assert_eq!(emu.registers[1], 31 << 7);
+        Ok(())
+    }
+
+    #[test]
+    fn sra() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | (((-2 as i16) << 4) as u16 as u32),
+            0b000000_00000_00001_00001_00011_000011
+        ];
+        assert_eq!(emu.registers[1], ((-2 as i32) << 1) as u32);
+        Ok(())
+    }
+
+    #[test]
+    fn srav() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | (((-2 as i16) << 4) as u16 as u32),
+            0b001000_00000_00010_0000000000000000 | 3,
+            0b000000_00010_00001_00001_00000_000111
+        ];
+        assert_eq!(emu.registers[1], ((-2 as i32) << 1) as u32);
+        Ok(())
+    }
+
+    #[test]
+    fn srl() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | (31 << 6),
+            0b000000_00000_00001_00001_00011_000010
+        ];
+        assert_eq!(emu.registers[1], 31 << 3);
+        Ok(())
+    }
+
+    #[test]
+    fn srlv() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | (31 << 6),
+            0b001000_00000_00010_0000000000000000 | 3,
+            0b000000_00010_00001_00001_00000_000110
+        ];
+        assert_eq!(emu.registers[1], 31 << 3);
         Ok(())
     }
 
