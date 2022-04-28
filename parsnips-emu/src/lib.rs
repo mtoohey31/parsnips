@@ -609,6 +609,16 @@ mod tests {
         assert_eq!(emu.registers[1], 31 << 3);
         Ok(())
     }
+    #[test]
+    fn srl_not_extended() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | (((-2 as i16) << 4) as u16 as u32),
+            0b000000_00000_00001_00001_01111_000010
+        ];
+        assert_eq!(emu.registers[1], ((-2 as i32) << 4) as u32 >> 15);
+        Ok(())
+    }
 
     #[test]
     fn srlv() -> RUE {
@@ -619,6 +629,17 @@ mod tests {
             0b000000_00010_00001_00001_00000_000110
         ];
         assert_eq!(emu.registers[1], 31 << 3);
+        Ok(())
+    }
+    #[test]
+    fn srlv_not_extended() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | (((-2 as i16) << 4) as u16 as u32),
+            0b001000_00000_00010_0000000000000000 | 15,
+            0b000000_00010_00001_00001_00000_000110
+        ];
+        assert_eq!(emu.registers[1], ((-2 as i32) << 4) as u32 >> 15);
         Ok(())
     }
 
