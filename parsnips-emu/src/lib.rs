@@ -207,6 +207,11 @@ impl Emulator {
                         self.registers[inst.rd()] =
                             self.registers[inst.rs()] - self.registers[inst.rt()];
                     }
+                    JR => {
+                        use inst::JumpRFields;
+
+                        self.program_counter = self.registers[inst.rs()];
+                    }
                     _ => todo!(),
                 }
             }
@@ -778,6 +783,20 @@ mod tests {
             Err(EmulatorError::JumpOutOfRange { pc: 132, max: 4 }) => true,
             _ => false,
         });
+        Ok(())
+    }
+
+    #[test]
+    fn jr() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00001_00001_0000000000000000 | 1,
+            // jump to position 0
+            0b000000_00000_00000_00000_00000_001000,
+            0b001000_00000_00010_0000000000000000 | 1
+        ];
+        assert_eq!(emu.registers[1], 2);
+        assert_eq!(emu.registers[2], 0);
         Ok(())
     }
 }
