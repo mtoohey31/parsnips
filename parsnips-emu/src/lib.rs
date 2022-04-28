@@ -7,6 +7,7 @@ use std::{error::Error, fmt};
 #[derive(Debug)]
 pub enum EmulatorError {
     InvalidFunct(u8),
+    InvalidOpcode(u8),
     JumpOutOfRange { pc: u32, max: usize },
     Overflow,
 }
@@ -14,6 +15,7 @@ impl fmt::Display for EmulatorError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::InvalidFunct(funct) => write!(f, "invalid function {:#08b}", funct),
+            Self::InvalidOpcode(op) => write!(f, "invalid opcode {:#08b}", op),
             Self::JumpOutOfRange { pc, max } => {
                 write!(
                     f,
@@ -29,10 +31,9 @@ impl Error for EmulatorError {}
 
 pub struct Emulator {
     registers: [u32; 32],
+    // PERF: consider refactoring to a single u64
     lo: u32,
     hi: u32,
-    // TODO: what are the possible values that need to be stored here?
-    comparison_bit: bool,
     program: Vec<Inst>,
     program_counter: u32,
 }
@@ -43,7 +44,6 @@ impl Emulator {
             registers: [0; 32],
             lo: 0,
             hi: 0,
-            comparison_bit: false,
             program,
             program_counter: 0,
         };
@@ -318,7 +318,36 @@ impl Emulator {
                     0
                 };
             }
-            _ => todo!(),
+            BEQ => {
+                use inst::BranchFields;
+
+                if self.registers[inst.rs()] == self.registers[inst.rt()] {
+                    self.program_counter = (self.program_counter as i32 + inst.imm()) as u32;
+                }
+            }
+            BNE => {
+                use inst::BranchFields;
+
+                if self.registers[inst.rs()] != self.registers[inst.rt()] {
+                    self.program_counter = (self.program_counter as i32 + inst.imm()) as u32;
+                }
+            }
+            BLEZ => {
+                use inst::BranchZFields;
+
+                if self.registers[inst.rs()] as i32 <= 0 {
+                    self.program_counter = (self.program_counter as i32 + inst.imm()) as u32;
+                }
+            }
+            BGTZ => {
+                use inst::BranchZFields;
+
+                if self.registers[inst.rs()] as i32 > 0 {
+                    self.program_counter = (self.program_counter as i32 + inst.imm()) as u32;
+                }
+            }
+            SYSCALL | LB | LH | LW | LBU | LHU | SB | SH | SW => todo!(),
+            _ => return Err(EmulatorError::InvalidOpcode(inst.op())),
         };
 
         Ok(())
@@ -1058,10 +1087,102 @@ mod tests {
     }
 
     #[test]
+    fn beq_eq() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![0b000100_00000_00001_0000000000000000 | 12];
+        assert_eq!(emu.program_counter, 4 + 12);
+        Ok(())
+    }
+    #[test]
+    fn beq_neq() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 1,
+            0b000100_00000_00001_0000000000000000 | 12
+        ];
+        assert_eq!(emu.program_counter, 8);
+        Ok(())
+    }
+
+    #[test]
+    fn bne_neq() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 1,
+            0b000101_00000_00001_0000000000000000 | 12
+        ];
+        assert_eq!(emu.program_counter, 8 + 12);
+        Ok(())
+    }
+    #[test]
+    fn bne_eq() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![0b000101_00000_00001_0000000000000000 | 12];
+        assert_eq!(emu.program_counter, 4);
+        Ok(())
+    }
+
+    #[test]
+    fn blez_zero() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![0b000110_00000_00000_0000000000000000 | 12];
+        assert_eq!(emu.program_counter, 4 + 12);
+        Ok(())
+    }
+    #[test]
+    fn blez_pos_one() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 1,
+            0b000110_00001_00000_0000000000000000 | 12
+        ];
+        assert_eq!(emu.program_counter, 8);
+        Ok(())
+    }
+    #[test]
+    fn blez_minus_one() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | (-1 as i16 as u16 as u32),
+            0b000110_00001_00000_0000000000000000 | 12
+        ];
+        assert_eq!(emu.program_counter, 8 + 12);
+        Ok(())
+    }
+
+    #[test]
+    fn bgtz_zero() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![0b000111_00000_00000_0000000000000000 | 12];
+        assert_eq!(emu.program_counter, 4);
+        Ok(())
+    }
+    #[test]
+    fn bgtz_one() -> RUE {
+        #[allow(unused)]
+        let emu = step_with![
+            0b001000_00000_00001_0000000000000000 | 1,
+            0b000111_00001_00000_0000000000000000 | 12
+        ];
+        assert_eq!(emu.program_counter, 8 + 12);
+        Ok(())
+    }
+
+    #[test]
     fn invalid_funct() -> RUE {
         let mut emu = Emulator::new(vec![0b000000_00000_00000_00000_00000_111111]);
         assert!(match emu.step() {
             Err(EmulatorError::InvalidFunct(0b111111)) => true,
+            _ => false,
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_opcode() -> RUE {
+        let mut emu = Emulator::new(vec![0b111111_00000_00000_00000_00000_000000]);
+        assert!(match emu.step() {
+            Err(EmulatorError::InvalidOpcode(0b111111)) => true,
             _ => false,
         });
         Ok(())
