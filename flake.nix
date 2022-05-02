@@ -24,19 +24,17 @@
         };
       in
       rec {
-        packages.parsnips = naersk-lib.buildPackage {
+        packages.default = naersk-lib.buildPackage {
           pname = "parsnips";
           root = ./.;
         };
-        defaultPackage = packages.parsnips;
 
-        apps.parsnips = utils.lib.mkApp {
-          drv = packages.parsnips;
+        apps.default = utils.lib.mkApp {
+          drv = packages.default;
           exePath = "/bin/pn";
         };
-        defaultApp = apps.parsnips;
 
-        devShell = pkgs.mkShell {
+        devShells.default = pkgs.mkShell {
           nativeBuildInputs = [
             rustChannel.rust
             pkgs.evcxr
