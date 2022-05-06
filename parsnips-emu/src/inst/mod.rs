@@ -257,10 +257,12 @@ impl TrapFields for Inst {
 #[cfg(test)]
 mod tests {
     use super::Inst;
+    use wasm_bindgen_test::wasm_bindgen_test;
 
     const REG_INST: Inst = 0b000001_00010_00011_00100_00101_000110;
 
     #[test]
+    #[wasm_bindgen_test]
     fn opfields() {
         use super::InstFields;
 
@@ -268,6 +270,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn reg_fields() {
         use super::RegFields;
 

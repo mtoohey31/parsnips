@@ -9,6 +9,15 @@ homepage = "https://github.com/mtoohey31/parsnips"
 repository = "https://github.com/mtoohey31/parsnips"
 license = "MIT OR Apache-2.0"
 
+[lib]
+crate-type = ["cdylib", "lib"]
+
 [dependencies]
 # needed for ast types of input programs to be emulated
 parsnips-parser.path = "../parsnips-parser"
+# needed for compiling to wasm
+wasm-bindgen = "0.2.80"
+
+[dev-dependencies]
+# for testing compiled wasm
+wasm-bindgen-test = "0.3.30"
