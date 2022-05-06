@@ -24,7 +24,7 @@ jobs:
     - name: Cache nix
       uses: actions/cache@v3
       with:
-        key: ${{ runner.os }}-nix-${{ hashFiles('./flake.lock') }}
+        key: ${{ runner.os }}-nix-${{ hashFiles('./flake.lock', './flake.nix') }}
         path: |
           /nix/store/
           /nix/var/nix/profiles/per-user/${{ env.USER }}/profile/bin
