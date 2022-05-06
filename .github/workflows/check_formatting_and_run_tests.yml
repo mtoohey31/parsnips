@@ -9,8 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - name: Check formatting
-      run: rustfmt --check $(find . -name '*.rs')
     - uses: cachix/install-nix-action@v17
-    - name: Run tests
-      run: nix develop -c sh -c 'cargo test --workspace && (cd parsnips-emu && wasm-pack test --node --mode no-install)'
+    - name: Check formatting and run tests
+      run: nix develop -i -c sh -c 'rustfmt --check $(find . -name "*.rs") && cargo test --workspace && (cd parsnips-emu && wasm-pack test --node --mode no-install)'
