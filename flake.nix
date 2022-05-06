@@ -48,6 +48,19 @@
             openssl
             pkg-config
             rust-analyzer
+            (wasm-bindgen-cli.overrideAttrs (oldAttrs: rec {
+              version = "0.2.80";
+              src = fetchCrate {
+                inherit (oldAttrs) pname;
+                inherit version;
+                sha256 = "f3XRVuK892TE6xP7eq3aKpl9d3fnOFxLh+/K59iWPAg=";
+
+              };
+              cargoDeps = oldAttrs.cargoDeps.overrideAttrs (_: {
+                inherit src;
+                outputHash = "sha256-sqBsfNYncwWpEA+E0I98WcrvPKLB9xn1CHK1BQv/wVQ=";
+              });
+            }))
             wasm-pack
           ] ++ (with nodePackages; [
             pnpm

@@ -13,4 +13,4 @@ jobs:
       run: rustfmt --check $(find . -name '*.rs')
     - uses: cachix/install-nix-action@v17
     - name: Run tests
-      run: nix develop -c sh -c 'cargo test --workspace && (cd parsnips-emu && wasm-pack test --node)'
+      run: nix develop -c sh -c 'cargo test --workspace && (cd parsnips-emu && wasm-pack test --node --mode no-install)'
