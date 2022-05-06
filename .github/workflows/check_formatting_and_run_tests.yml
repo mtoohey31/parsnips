@@ -11,4 +11,4 @@ jobs:
     - uses: actions/checkout@v3
     - uses: cachix/install-nix-action@v17
     - name: Check formatting and run tests
-      run: nix develop .#ci -i -c sh -c 'rustfmt --check $(find . -name "*.rs") && cargo test --workspace && (cd parsnips-emu && wasm-pack test --node --mode no-install) && (cd parsnips-web && prettier --check . && pnpm install && pnpm run check && pnpm run build)'
+      run: nix develop .#ci -i -c sh -c 'rustfmt --check $(find . -name "*.rs") && cargo test --workspace && (cd parsnips-emu && wasm-pack test --node --mode no-install && wasm-pack build --target web --mode no-install) && (cd parsnips-web && prettier --check . && pnpm install && rm -rf node_modules/parsnips-emu && pnpm run build && pnpm run check)'
