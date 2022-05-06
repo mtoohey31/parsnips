@@ -1,8 +1,6 @@
 #![no_std]
 #![feature(unchecked_math, lang_items)]
 
-// TODO: display more details about the sources of errors, i.e. opcodes and
-// function codes, program counter value on overflow
 #[cfg(target_arch = "wasm32")]
 mod error {
     use core::{fmt, str::from_utf8_unchecked};
@@ -10,11 +8,11 @@ mod error {
 
     pub type ErrorType = JsValue;
 
+    // source: https://stackoverflow.com/a/50201632
     pub struct JsStrWriter<'a> {
         buf: &'a mut [u8],
         used: usize,
     }
-
     impl<'a> JsStrWriter<'a> {
         pub fn new(buf: &'a mut [u8]) -> Self {
             Self { buf, used: 0 }
@@ -24,7 +22,6 @@ mod error {
             JsValue::from_str(unsafe { from_utf8_unchecked(&self.buf[..self.used]) })
         }
     }
-
     impl<'a> fmt::Write for JsStrWriter<'a> {
         fn write_str(&mut self, str: &str) -> fmt::Result {
             let rem_buf = &mut self.buf[self.used..];
