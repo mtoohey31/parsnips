@@ -73,13 +73,13 @@
           {
             default = pkgs.mkShell {
               nativeBuildInputs = pkgsMinimal ++ pkgsTools;
+              shellHook = ''
+                export RUST_SRC_PATH="${rustChannel.rust-src}/lib/rustlib/src/rust/library"
+              '';
             };
             ci = pkgs.mkShell {
               nativeBuildInputs = pkgsMinimal;
             };
-            shellHook = ''
-              export RUST_SRC_PATH="${rustChannel.rust-src}/lib/rustlib/src/rust/library"
-            '';
           };
       });
 }
