@@ -5,11 +5,11 @@
   onMount(async () => {
     await init();
 
-    let prog = new Uint32Array([
+    let prog = new Uint8Array(new Uint32Array([
       0b001001_00000_00011_1000001101101001,
       0b001001_00000_00010_1011000100111011,
       0b000000_00010_00011_00100_00101_100100,
-    ]);
+    ]).buffer);
 
     let emu = new Emulator();
 
@@ -20,7 +20,7 @@
 
     emu.free();
 
-    prog = new Uint32Array([0b000000_00010_00011_00100_00101_111111]);
+    prog = new Uint8Array(new Uint32Array([0b000000_00010_00011_00100_00101_111111]).buffer);
 
     emu = new Emulator();
 
