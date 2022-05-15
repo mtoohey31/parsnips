@@ -18,7 +18,10 @@
           channel = "nightly";
           sha256 = "LE515NwqEieN9jVZcpkGGmd5VLXTix3TTUNiXb01sJM=";
         };
-        rust = rustChannel.rust.override (old: { targets = [ "wasm32-unknown-unknown" ]; });
+        rust = rustChannel.rust.override (old: {
+          extensions = old.extensions ++ [ "llvm-tools-preview" ];
+          targets = old.targets ++ [ "wasm32-unknown-unknown" ];
+        });
         naersk-lib = naersk.lib."${system}".override {
           cargo = rust;
           rustc = rust;
@@ -62,6 +65,7 @@
             pkgsTools = with pkgs; [
               binaryen
               evcxr
+              grcov
               rust-analyzer
             ] ++ (with nodePackages; [
               svelte-language-server
