@@ -211,9 +211,9 @@ impl BranchZFields for Inst {
 }
 
 pub trait LoadStoreFields {
-    fn rt(&self) -> usize;
     fn rs(&self) -> usize;
-    fn imm(&self) -> u16;
+    fn rt(&self) -> usize;
+    fn imm(&self) -> i32;
 }
 impl LoadStoreFields for Inst {
     #[inline(always)]
@@ -225,8 +225,8 @@ impl LoadStoreFields for Inst {
         (self >> 16 & MASK5) as usize
     }
     #[inline(always)]
-    fn imm(&self) -> u16 {
-        (self & MASK16) as u16
+    fn imm(&self) -> i32 {
+        (self & MASK16) as i16 as i32
     }
 }
 

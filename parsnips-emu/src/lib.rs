@@ -73,8 +73,52 @@ mod error {
     #[macro_export]
     macro_rules! ERR_OVERFLOW {
         () => {
-            JsValue::from_str("overflow ocurred")
+            JsValue::from_str("overflow occurred")
         };
+    }
+    #[macro_export]
+    macro_rules! ERR_MISALIGNED_LH {
+        ($x:expr) => {{
+            let mut buf: [u8; 60] = [0; 60];
+            let mut w = JsStrWriter::new(&mut buf[..]);
+            core::fmt::write(
+                &mut w,
+                format_args!("misaligned load-half from {:#034b}", $x),
+            )
+            .unwrap();
+            w.as_js_value()
+        }};
+    }
+    #[macro_export]
+    macro_rules! ERR_MISALIGNED_LW {
+        ($x:expr) => {{
+            let mut buf: [u8; 60] = [0; 60];
+            let mut w = JsStrWriter::new(&mut buf[..]);
+            core::fmt::write(
+                &mut w,
+                format_args!("misaligned load-word from {:#034b}", $x),
+            )
+            .unwrap();
+            w.as_js_value()
+        }};
+    }
+    #[macro_export]
+    macro_rules! ERR_MISALIGNED_SH {
+        ($x:expr) => {{
+            let mut buf: [u8; 58] = [0; 58];
+            let mut w = JsStrWriter::new(&mut buf[..]);
+            core::fmt::write(&mut w, format_args!("misaligned save-half to {:#034b}", $x)).unwrap();
+            w.as_js_value()
+        }};
+    }
+    #[macro_export]
+    macro_rules! ERR_MISALIGNED_SW {
+        ($x:expr) => {{
+            let mut buf: [u8; 58] = [0; 58];
+            let mut w = JsStrWriter::new(&mut buf[..]);
+            core::fmt::write(&mut w, format_args!("misaligned save-word to {:#034b}", $x)).unwrap();
+            w.as_js_value()
+        }};
     }
 }
 #[cfg(target_arch = "wasm32")]
@@ -93,6 +137,10 @@ mod error {
         InvalidOpcode(u8),
         OutOfBounds { pc: u32, max: u32 },
         Overflow,
+        MisalignedLH(u32),
+        MisalignedLW(u32),
+        MisalignedSH(u32),
+        MisalignedSW(u32),
     }
     #[cfg(feature = "std")]
     impl fmt::Display for EmulatorError {
@@ -108,6 +156,10 @@ mod error {
                     )
                 }
                 Self::Overflow => write!(f, "overflow occurred"),
+                Self::MisalignedLH(addr) => write!(f, "misaligned load-half from {:#034b}", addr),
+                Self::MisalignedLW(addr) => write!(f, "misaligned load-word from {:#034b}", addr),
+                Self::MisalignedSH(addr) => write!(f, "misaligned save-half to {:#034b}", addr),
+                Self::MisalignedSH(addr) => write!(f, "misaligned save-half to {:#034b}", addr),
             }
         }
     }
@@ -138,6 +190,30 @@ mod error {
             EmulatorError::Overflow
         };
     }
+    #[macro_export]
+    macro_rules! ERR_MISALIGNED_LH {
+        ($x:expr) => {
+            EmulatorError::MisalignedLH($x)
+        };
+    }
+    #[macro_export]
+    macro_rules! ERR_MISALIGNED_LW {
+        ($x:expr) => {
+            EmulatorError::MisalignedLW($x)
+        };
+    }
+    #[macro_export]
+    macro_rules! ERR_MISALIGNED_SH {
+        ($x:expr) => {
+            EmulatorError::MisalignedSH($x)
+        };
+    }
+    #[macro_export]
+    macro_rules! ERR_MISALIGNED_SW {
+        ($x:expr) => {
+            EmulatorError::MisalignedSW($x)
+        };
+    }
 }
 
 use error::*;
@@ -158,6 +234,7 @@ mod inst;
 use inst::{opcode::*, Inst};
 
 const MASK8: u32 = (1 << 8) - 1;
+const MASK16: u32 = (1 << 16) - 1;
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub struct Emulator {
@@ -463,7 +540,82 @@ impl Emulator {
                     self.pc = (self.pc as i32 + inst.imm()) as u32;
                 }
             }
-            SYSCALL | LB | LH | LW | LBU | LHU | SB | SH | SW => todo!(),
+            LB => {
+                use inst::LoadStoreFields;
+
+                self.regs[inst.rt()] =
+                    memory[(self.regs[inst.rs()] as i32 + inst.imm()) as usize] as i8 as i32 as u32;
+            }
+            LBU => {
+                use inst::LoadStoreFields;
+
+                self.regs[inst.rt()] =
+                    memory[(self.regs[inst.rs()] as i32 + inst.imm()) as usize] as u32;
+            }
+            LH => {
+                use inst::LoadStoreFields;
+
+                let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
+                if addr % 2 == 0 {
+                    self.regs[inst.rt()] =
+                        u16::from_le(unsafe { memory.align_to::<u16>() }.1[addr as usize / 2])
+                            as i16 as i32 as u32;
+                } else {
+                    return Err(ERR_MISALIGNED_LH![addr]);
+                }
+            }
+            LHU => {
+                use inst::LoadStoreFields;
+
+                let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
+                if addr % 2 == 0 {
+                    self.regs[inst.rt()] =
+                        u16::from_le(unsafe { memory.align_to::<u16>() }.1[addr as usize / 2])
+                            as u32;
+                } else {
+                    return Err(ERR_MISALIGNED_LH![addr]);
+                }
+            }
+            LW => {
+                use inst::LoadStoreFields;
+
+                let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
+                if addr % 4 == 0 {
+                    self.regs[inst.rt()] =
+                        u32::from_le(unsafe { memory.align_to::<u32>() }.1[addr as usize / 4]);
+                } else {
+                    return Err(ERR_MISALIGNED_LW![addr]);
+                }
+            }
+            SB => {
+                use inst::LoadStoreFields;
+
+                memory[(self.regs[inst.rs()] as i32 + inst.imm()) as usize] =
+                    (self.regs[inst.rt()] & MASK8) as u8;
+            }
+            SH => {
+                use inst::LoadStoreFields;
+
+                let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
+                if addr % 2 == 0 {
+                    unsafe { memory.align_to_mut::<u16>() }.1[addr as usize / 2] =
+                        ((self.regs[inst.rt()] & MASK16) as u16).to_le();
+                } else {
+                    return Err(ERR_MISALIGNED_SH![addr]);
+                }
+            }
+            SW => {
+                use inst::LoadStoreFields;
+
+                let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
+                if addr % 4 == 0 {
+                    unsafe { memory.align_to_mut::<u32>() }.1[addr as usize / 4] =
+                        self.regs[inst.rt()];
+                } else {
+                    return Err(ERR_MISALIGNED_SW![addr]);
+                }
+            }
+            SYSCALL => todo!(),
             _ => return Err(ERR_OP![inst.op()]),
         };
 
@@ -1468,6 +1620,267 @@ mod tests {
         emu.step(&mut prog).unwrap();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.pc, 8 + 12);
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn lb_pos() {
+        let mut prog = le_byte_arr![
+            0b100000_00000_00001_0000000000000101,
+            0b00000000_00000000_00101101_00000000,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        assert_eq!(emu.regs[1], 0b00101101);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn lb_neg() {
+        let mut prog = le_byte_arr![
+            0b100000_00000_00001_0000000000000101,
+            (-7 as i8 as u8 as u32) << 8,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        assert_eq!(emu.regs[1], -7 as i32 as u32);
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn lbu_pos() {
+        let mut prog = le_byte_arr![
+            0b100100_00000_00001_0000000000000101,
+            0b00000000_00000000_00101101_00000000,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        assert_eq!(emu.regs[1], 0b00101101);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn lbu_neg() {
+        let mut prog = le_byte_arr![
+            0b100100_00000_00001_0000000000000101,
+            (-7 as i8 as u8 as u32) << 8,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        assert_eq!(emu.regs[1], -7 as i8 as u8 as u32);
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn sb() {
+        let mut prog = le_byte_arr![
+            0b001000_00000_00001_0000000000000000 | 9185,
+            0b101000_00000_00001_0000000000000011,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog).unwrap();
+        assert_eq!(prog[3], (9185 & MASK8) as u8);
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn lh_pos() {
+        let mut prog = le_byte_arr![
+            0b100001_00000_00001_0000000000000100,
+            0b00000000_00000000_01001101_00101101,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        assert_eq!(emu.regs[1], 0b01001101_00101101);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn lh_neg() {
+        let mut prog = le_byte_arr![
+            0b100001_00000_00001_0000000000000100,
+            -7 as i16 as u16 as u32,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        assert_eq!(emu.regs[1], -7 as i32 as u32);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn lh_misaligned() {
+        let mut prog = le_byte_arr![0b100001_00000_00001_0000000000000101];
+        let mut emu = Emulator::new();
+        #[cfg(target_arch = "wasm32")]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(v) =>
+                    v.as_string().unwrap()
+                        == "misaligned load-half from 0b00000000000000000000000000000101",
+                _ => false,
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(ErrorType::MisalignedLH(0b00000000000000000000000000000101)) => true,
+                _ => false,
+            })
+        }
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn lhu_pos() {
+        let mut prog = le_byte_arr![
+            0b100101_00000_00001_0000000000000100,
+            0b00000000_00000000_01001101_00101101,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        assert_eq!(emu.regs[1], 0b01001101_00101101);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn lhu_neg() {
+        let mut prog = le_byte_arr![
+            0b100101_00000_00001_0000000000000100,
+            -7 as i16 as u16 as u32,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        assert_eq!(emu.regs[1], -7 as i16 as u16 as u32);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn lhu_misaligned() {
+        let mut prog = le_byte_arr![0b100101_00000_00001_0000000000000101];
+        let mut emu = Emulator::new();
+        #[cfg(target_arch = "wasm32")]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(v) =>
+                    v.as_string().unwrap()
+                        == "misaligned load-half from 0b00000000000000000000000000000101",
+                _ => false,
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(ErrorType::MisalignedLH(0b00000000000000000000000000000101)) => true,
+                _ => false,
+            })
+        }
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn sh() {
+        let mut prog = le_byte_arr![
+            0b001000_00000_00001_0000000000000000 | 9185,
+            0b101001_00000_00001_0000000000000010,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog).unwrap();
+        assert_eq!(unsafe { prog.align_to::<u16>() }.1[1], 9185);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn sh_misaligned() {
+        let mut prog = le_byte_arr![0b101001_00000_00001_0000000000000011];
+        let mut emu = Emulator::new();
+        #[cfg(target_arch = "wasm32")]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(v) =>
+                    v.as_string().unwrap()
+                        == "misaligned save-half to 0b00000000000000000000000000000011",
+                _ => false,
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(ErrorType::MisalignedSH(0b00000000000000000000000000000011)) => true,
+                _ => false,
+            })
+        }
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn lw_pos() {
+        let mut prog = le_byte_arr![
+            0b100011_00000_00001_0000000000000100,
+            0b01010011_10011001_11001101_10101101,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        assert_eq!(emu.regs[1], 0b01010011_10011001_11001101_10101101);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn lw_neg() {
+        let mut prog = le_byte_arr![0b100011_00000_00001_0000000000000100, -7 as i32 as u32,];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        assert_eq!(emu.regs[1], -7 as i32 as u32);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn lw_misaligned() {
+        let mut prog = le_byte_arr![0b100011_00000_00001_0000000000000010];
+        let mut emu = Emulator::new();
+        #[cfg(target_arch = "wasm32")]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(v) =>
+                    v.as_string().unwrap()
+                        == "misaligned load-word from 0b00000000000000000000000000000010",
+                _ => false,
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(ErrorType::MisalignedLW(0b00000000000000000000000000000010)) => true,
+                _ => false,
+            })
+        }
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn sw() {
+        let mut prog = le_byte_arr![
+            0b001000_00000_00001_0000000000000000 | -9185 as i16 as u16 as u32,
+            0b101011_00000_00001_0000000000000100,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog).unwrap();
+        assert_eq!(unsafe { prog.align_to::<u32>() }.1[1], -9185 as i32 as u32);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn sw_misaligned() {
+        let mut prog = le_byte_arr![0b101011_00000_00001_0000000000010010];
+        let mut emu = Emulator::new();
+        #[cfg(target_arch = "wasm32")]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(v) =>
+                    v.as_string().unwrap()
+                        == "misaligned save-word to 0b00000000000000000000000000010010",
+                _ => false,
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(ErrorType::MisalignedSW(0b00000000000000000000000000010010)) => true,
+                _ => false,
+            })
+        }
     }
 
     #[test]
