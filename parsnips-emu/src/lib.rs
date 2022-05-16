@@ -628,9 +628,6 @@ mod tests {
     use super::*;
     use wasm_bindgen_test::wasm_bindgen_test;
 
-    // TODO: add tests to check for overflows once mults or shifts are
-    // implemented
-
     macro_rules! le_byte_arr {
         ($($x:expr),+$(,)?) => {
             [
@@ -685,6 +682,34 @@ mod tests {
         emu.step(&mut prog).unwrap();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[4], u16::MAX as u32 - 1);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn add_overflow() {
+        let mut prog = le_byte_arr![
+            0b001000_00000_00001_0000000000000000 | 1,
+            0b000000_00000_00001_00010_11111_000000,
+            0b000000_00000_00001_00011_11111_000000,
+            0b000000_00010_00011_00100_00000_100000,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog).unwrap();
+        #[cfg(target_arch = "wasm32")]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(v) => v.as_string().unwrap() == "overflow occurred",
+                _ => false,
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(ErrorType::Overflow) => true,
+                _ => false,
+            })
+        }
     }
 
     #[test]
@@ -1184,6 +1209,36 @@ mod tests {
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[1], -1 as i16 as i32 as u32);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn addi_overflow() {
+        let mut prog = le_byte_arr![
+            0b001000_00000_00001_0000000000000000 | 1,
+            0b000000_00000_00001_00010_11111_000000,
+            0b000000_00000_00001_00011_11111_000000,
+            0b001000_00010_00010_1111111111111111,
+            0b000000_00010_00011_00100_00000_100000,
+            0b001000_00100_00100_1111111111111111,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog).unwrap();
+        #[cfg(target_arch = "wasm32")]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(v) => v.as_string().unwrap() == "overflow occurred",
+                _ => false,
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(ErrorType::Overflow) => true,
+                _ => false,
+            })
+        }
     }
 
     #[test]
