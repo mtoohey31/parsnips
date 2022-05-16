@@ -40,7 +40,7 @@
 
         apps.default = utils.lib.mkApp {
           drv = packages.default;
-          exePath = "/bin/pn";
+          exePath = "/bin/par";
         };
 
         devShells =

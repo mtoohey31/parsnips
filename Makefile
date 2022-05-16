@@ -21,9 +21,9 @@ test-emu:
 test-web: parsnips-web/node_modules parsnips-web/node_modules/parsnips-emu
 	cd parsnips-web && pnpm run check
 
-build: parsnips-web/dist
+build: parsnips-web/dist target/release/par
 
-target/release/pn: $(CLI_DEPS) $(EMU_DEPS) $(PARSER_DEPS)
+target/release/par: $(CLI_DEPS) $(EMU_DEPS) $(PARSER_DEPS)
 	cargo build -p parsnips-cli --release
 
 parsnips-emu/pkg: $(EMU_DEPS) $(PARSER_DEPS)

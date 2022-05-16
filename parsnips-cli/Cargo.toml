@@ -9,10 +9,10 @@ homepage = "https://github.com/mtoohey31/parsnips"
 repository = "https://github.com/mtoohey31/parsnips"
 license = "MIT OR Apache-2.0"
 
-default-run = "pn"
+default-run = "par"
 
 [[bin]]
-name = "pn"
+name = "par"
 path = "src/main.rs"
 
 [dependencies]
