@@ -120,6 +120,19 @@ mod error {
             w.as_js_value()
         }};
     }
+    #[macro_export]
+    macro_rules! ERR_MISALIGNED_PC {
+        ($x:expr) => {{
+            let mut buf: [u8; 61] = [0; 61];
+            let mut w = JsStrWriter::new(&mut buf[..]);
+            core::fmt::write(
+                &mut w,
+                format_args!("misaligned program counter {:#034b}", $x),
+            )
+            .unwrap();
+            w.as_js_value()
+        }};
+    }
 }
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -141,6 +154,7 @@ mod error {
         MisalignedLW(u32),
         MisalignedSH(u32),
         MisalignedSW(u32),
+        MisalignedPC(u32),
     }
     #[cfg(feature = "std")]
     impl fmt::Display for EmulatorError {
@@ -160,6 +174,7 @@ mod error {
                 Self::MisalignedLW(addr) => write!(f, "misaligned load-word from {:#034b}", addr),
                 Self::MisalignedSH(addr) => write!(f, "misaligned save-half to {:#034b}", addr),
                 Self::MisalignedSH(addr) => write!(f, "misaligned save-half to {:#034b}", addr),
+                Self::MisalignedPC(addr) => write!(f, "misaligned program counter {:#034b}", addr),
             }
         }
     }
@@ -212,6 +227,12 @@ mod error {
     macro_rules! ERR_MISALIGNED_SW {
         ($x:expr) => {
             EmulatorError::MisalignedSW($x)
+        };
+    }
+    #[macro_export]
+    macro_rules! ERR_MISALIGNED_PC {
+        ($x:expr) => {
+            EmulatorError::MisalignedPC($x)
         };
     }
 }
@@ -267,9 +288,17 @@ impl Emulator {
         if self.pc >= memory.len() as u32 {
             return Err(ERR_OOB![self.pc, memory.len() as u32 - 4]);
         }
-        let mut inst_bytes: [u8; 4] = [0; 4];
-        inst_bytes.copy_from_slice(&memory[self.pc as usize..self.pc as usize + 4]);
-        let inst = u32::from_le_bytes(inst_bytes);
+        let inst = if self.pc % 4 == 0 {
+            // this operation is efficient on little-endian hosts because from_le is a no-op (as per
+            // the docs) while on big-endian hosts the bytes will be swapped correctly, so the use
+            // of transmutation in slice::align_to is safe because we are
+            // handling the different endianness cases properly. the unsafe slice::align_to approach
+            // is preferred to constructing an array of each of the 4 bytes and feeding it to
+            // from_le because that isn't a no-op on little-endian systems
+            Inst::from_le(unsafe { memory.align_to::<u32>() }.1[(self.pc / 4) as usize])
+        } else {
+            return Err(ERR_MISALIGNED_PC![self.pc]);
+        };
         self.pc += 4;
         match inst.op() {
             REG => {
@@ -1330,6 +1359,33 @@ mod tests {
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[1], 2);
         assert_eq!(emu.regs[2], 0);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn jr_misaligned_pc() {
+        let mut prog = le_byte_arr![
+            0b001000_00000_00001_0000000000000000 | 1,
+            0b000000_00001_00000_00000_00000_001000,
+        ];
+        let mut emu = Emulator::new();
+        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog).unwrap();
+        #[cfg(target_arch = "wasm32")]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(v) =>
+                    v.as_string().unwrap()
+                        == "misaligned program counter 0b00000000000000000000000000000001",
+                _ => false,
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            assert!(match emu.step(&mut prog) {
+                Err(ErrorType::MisalignedPC(0b00000000000000000000000000000001)) => true,
+                _ => false,
+            })
+        }
     }
 
     #[test]
