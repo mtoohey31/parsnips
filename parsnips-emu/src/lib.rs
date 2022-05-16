@@ -307,7 +307,10 @@ impl Emulator {
 
                 match inst.funct() {
                     // NOTE: the difference between ADD and ADDU is that ADD
-                    // generates a trap when an overflow occurs
+                    // generates a trap when an overflow occurs, so it is
+                    // correct to use the unsafe u32::unchecked_add for ADDU
+                    // and ADDIU because overflows in those operations are
+                    // allowed
                     ADD => {
                         use inst::ArithLogFields;
 
@@ -470,7 +473,6 @@ impl Emulator {
             ADDI => {
                 use inst::ArithLogIFields;
 
-                // NOTE: casts back and forth ensure sign extension
                 match (self.regs[inst.rs()] as i32).checked_add(inst.imm() as i16 as i32) {
                     Some(s) => self.regs[inst.rt()] = s as u32,
                     None => return Err(ERR_OVERFLOW![]),
@@ -479,7 +481,6 @@ impl Emulator {
             ADDIU => {
                 use inst::ArithLogIFields;
 
-                // NOTE: lack of casts back and forth ensure zero extension
                 self.regs[inst.rt()] =
                     unsafe { self.regs[inst.rs()].unchecked_add(inst.imm() as u32) };
             }

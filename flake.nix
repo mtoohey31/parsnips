@@ -28,9 +28,6 @@
         };
       in
       rec {
-        # TODO: add packages for libraries, including wasm library with build
-        # command: wasm-pack build --target web --mode no-install
-
         # TODO: flakify parsnips-web
 
         packages.default = naersk-lib.buildPackage {
