@@ -251,29 +251,3 @@ impl TrapFields for Inst {
         self & MASK26
     }
 }
-
-// TODO: write tests for all traits to verify that they get the right fields
-
-#[cfg(test)]
-mod tests {
-    use super::Inst;
-    use wasm_bindgen_test::wasm_bindgen_test;
-
-    const REG_INST: Inst = 0b000001_00010_00011_00100_00101_000110;
-
-    #[test]
-    #[wasm_bindgen_test]
-    fn opfields() {
-        use super::InstFields;
-
-        assert_eq!(REG_INST.op(), 1);
-    }
-
-    #[test]
-    #[wasm_bindgen_test]
-    fn reg_fields() {
-        use super::RegFields;
-
-        assert_eq!(REG_INST.funct(), 6);
-    }
-}
