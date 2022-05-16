@@ -22,14 +22,10 @@ jobs:
           ~/.cargo/.crates2.json
           ./target
     - name: Cache nix
-      uses: actions/cache@v3
+      uses: mtoohey31/cache-flake-attr@7fd5333baacccb7498f460f34ce958ef60f17541
       with:
         key: ${{ runner.os }}-nix-${{ hashFiles('./flake.lock', './flake.nix') }}
-        path: |
-          /nix/store/
-          /nix/var/nix/profiles/per-user/${{ env.USER }}/profile/bin
-          /nix/var/nix/profiles/default/bin/
-          /nix/var/nix/profiles/per-user/root/channel
+        flake_paths: .#devShells.x86_64-linux.ci
     - name: Cache node_modules
       uses: actions/cache@v3
       with:
@@ -37,6 +33,5 @@ jobs:
         path: |
           ~/.pnpm-store
           ./parsnips-web/node_modules
-    - uses: cachix/install-nix-action@v17
     - name: Check formatting and run tests
-      run: nix develop .#ci -i -c make
+      run: nix --extra-experimental-features nix-command --extra-experimental-features flakes develop .#ci -i -c make
