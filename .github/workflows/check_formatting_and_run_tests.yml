@@ -22,7 +22,7 @@ jobs:
           ~/.cargo/.crates2.json
           ./target
     - name: Cache nix
-      uses: mtoohey31/cache-flake-attr@7fd5333baacccb7498f460f34ce958ef60f17541
+      uses: mtoohey31/cache-flake-attrs@v2
       with:
         key: ${{ runner.os }}-nix-${{ hashFiles('./flake.lock', './flake.nix') }}
         flake_paths: .#devShells.x86_64-linux.ci
