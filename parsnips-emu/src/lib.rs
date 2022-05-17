@@ -282,6 +282,8 @@ impl Emulator {
         self.regs[reg]
     }
 
+    // NOTE: step must take memory as parameter instead of it being provided
+    // it to Emulator::new because wasm_bindgen values cannot have lifetimes
     pub fn step(&mut self, memory: &mut [u8]) -> Result<(), ErrorType> {
         use inst::InstFields;
 
