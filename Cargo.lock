@@ -234,6 +234,7 @@ dependencies = [
 name = "parsnips-emu"
 version = "0.1.0"
 dependencies = [
+ "js-sys",
  "parsnips-parser",
  "wasm-bindgen",
  "wasm-bindgen-test",

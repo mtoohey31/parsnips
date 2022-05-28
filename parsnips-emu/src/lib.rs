@@ -1,5 +1,5 @@
 #![no_std]
-#![feature(unchecked_math, lang_items)]
+#![feature(lang_items, slice_as_chunks, unchecked_math)]
 
 #[cfg(target_arch = "wasm32")]
 mod error {
@@ -257,6 +257,12 @@ use inst::{opcode::*, Inst};
 const MASK8: u32 = (1 << 8) - 1;
 const MASK16: u32 = (1 << 16) - 1;
 
+#[cfg(target_arch = "wasm32")]
+pub type SyscallHandler = js_sys::Function;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub type SyscallHandler<'a> = &'a dyn Fn(&[u32; 4]) -> [Option<u32>; 2];
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub struct Emulator {
     regs: [u32; 32],
@@ -284,7 +290,11 @@ impl Emulator {
 
     // NOTE: step must take memory as parameter instead of it being provided
     // it to Emulator::new because wasm_bindgen values cannot have lifetimes
-    pub fn step(&mut self, memory: &mut [u8]) -> Result<(), ErrorType> {
+    pub fn step(
+        &mut self,
+        memory: &mut [u8],
+        syscall_handler: Option<SyscallHandler>,
+    ) -> Result<(), ErrorType> {
         use inst::InstFields;
 
         if self.pc >= memory.len() as u32 {
@@ -647,7 +657,51 @@ impl Emulator {
                     return Err(ERR_MISALIGNED_SW![addr]);
                 }
             }
-            SYSCALL => todo!(),
+            SYSCALL => match syscall_handler {
+                Some(syscall_handler) => {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        let [v0, v1] = syscall_handler(&self.regs.as_rchunks::<4>().1[1]);
+                        if let Some(v0) = v0 {
+                            self.regs[2] = v0;
+                        }
+                        if let Some(v1) = v1 {
+                            self.regs[3] = v1;
+                        }
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        let res = js_sys::Array::from(
+                            &syscall_handler
+                                .apply(
+                                    &JsValue::NULL,
+                                    &js_sys::Array::of4(
+                                        &self.regs[4].into(),
+                                        &self.regs[5].into(),
+                                        &self.regs[6].into(),
+                                        &self.regs[7].into(),
+                                    ),
+                                )
+                                .unwrap(),
+                        );
+                        // TODO: figure out how to do this more elegantly,
+                        // though it doesn't need to be safe, because we're not
+                        // going to add a different error return type for user
+                        // errors: all error return values must be because of
+                        // mips runtime errors, not js/rust misuses of the
+                        // library
+                        if let Some(v0) = res.at(0).as_f64() {
+                            self.regs[2] = v0 as u32;
+                        }
+                        if let Some(v1) = res.at(1).as_f64() {
+                            self.regs[3] = v1 as u32;
+                        }
+                    }
+                }
+                None => {
+                    return Err(ERR_OP![inst.op()]);
+                }
+            },
             _ => return Err(ERR_OP![inst.op()]),
         };
 
@@ -682,9 +736,9 @@ mod tests {
             0b000000_00010_00011_00100_00101_100000,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[4], 3);
     }
     #[test]
@@ -696,9 +750,9 @@ mod tests {
             0b000000_00010_00011_00100_00101_100000,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[4], -2 as i32 as u32);
     }
     #[test]
@@ -710,9 +764,9 @@ mod tests {
             0b000000_00010_00011_00100_00101_100000,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[4], u16::MAX as u32 - 1);
     }
     #[test]
@@ -725,19 +779,19 @@ mod tests {
             0b000000_00010_00011_00100_00000_100000,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         #[cfg(target_arch = "wasm32")]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(v) => v.as_string().unwrap() == "overflow occurred",
                 _ => false,
             });
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(ErrorType::Overflow) => true,
                 _ => false,
             })
@@ -753,9 +807,9 @@ mod tests {
             0b000000_00010_00011_00100_00101_100001,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[4], 3);
     }
     #[test]
@@ -767,9 +821,9 @@ mod tests {
             0b000000_00010_00011_00100_00101_100001,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[4], u16::MAX as u32 * 2);
     }
 
@@ -782,9 +836,9 @@ mod tests {
             0b000000_00010_00011_00100_00101_100100,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[4], 0b1000000100101001);
     }
 
@@ -799,9 +853,9 @@ mod tests {
             0b000000_00001_00010_0000000000_011010,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.lo, 2);
         assert_eq!(emu.hi, 3);
     }
@@ -815,9 +869,9 @@ mod tests {
             0b000000_00001_00010_0000000000_011011,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.lo, 2);
         assert_eq!(emu.hi, 3);
     }
@@ -831,9 +885,9 @@ mod tests {
             0b000000_00001_00010_0000000000_011000,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.lo, 44);
         assert_eq!(emu.hi, 0);
     }
@@ -846,9 +900,9 @@ mod tests {
             0b000000_00001_00010_0000000000_011000,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.lo, -44 as i32 as u32);
         assert_eq!(emu.hi, 0);
     }
@@ -862,9 +916,9 @@ mod tests {
             0b000000_00001_00010_0000000000_011000,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.lo, i16::MAX as u32 * i16::MAX as u32);
         assert_eq!(emu.hi, 0);
     }
@@ -878,9 +932,9 @@ mod tests {
             0b000000_00001_00010_0000000000_011001,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.lo, 21);
         assert_eq!(emu.hi, 0);
     }
@@ -894,9 +948,9 @@ mod tests {
             0b000000_00001_00010_0000000000_011001,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.lo, 1);
         assert_eq!(emu.hi, 4294967294);
     }
@@ -910,9 +964,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_100111,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], 0b0001010011010010);
     }
 
@@ -925,9 +979,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_100101,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], 0b1110101100101101);
     }
 
@@ -939,8 +993,8 @@ mod tests {
             0b001101_00001_00010_1010101000101100,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[2], 0b1110101100101101);
     }
 
@@ -953,9 +1007,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_100110,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], 0b0110101100100001);
     }
 
@@ -967,8 +1021,8 @@ mod tests {
             0b001110_00001_00010_1010101000101100,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[2], 0b0110101100100001);
     }
 
@@ -977,7 +1031,7 @@ mod tests {
     fn lhi() {
         let mut prog = le_byte_arr![0b011001_00000_00001_0000000000000000 | 17];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 17 << 16);
     }
     #[test]
@@ -988,8 +1042,8 @@ mod tests {
             0b011000_00000_00001_0000000000000000 | 17,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], (17 << 16) + 17);
     }
 
@@ -998,7 +1052,7 @@ mod tests {
     fn llo() {
         let mut prog = le_byte_arr![0b011000_00000_00001_0000000000000000 | 17];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 17);
     }
     #[test]
@@ -1009,8 +1063,8 @@ mod tests {
             0b011001_00000_00001_0000000000000000 | 17,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], (17 << 16) + 17);
     }
 
@@ -1023,9 +1077,9 @@ mod tests {
             0b000000_00000_00000_00010_00000_010000,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.hi, 31);
         assert_eq!(emu.regs[2], 31);
     }
@@ -1039,9 +1093,9 @@ mod tests {
             0b000000_00000_00000_00010_00000_010010,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.lo, 31);
         assert_eq!(emu.regs[2], 31);
     }
@@ -1054,8 +1108,8 @@ mod tests {
             0b000000_00000_00001_00001_00111_000000,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 31 << 7);
     }
 
@@ -1068,9 +1122,9 @@ mod tests {
             0b000000_00010_00001_00001_00000_000100,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 31 << 7);
     }
 
@@ -1082,8 +1136,8 @@ mod tests {
             0b000000_00000_00001_00001_00011_000011,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], ((-2 as i32) << 1) as u32);
     }
 
@@ -1096,9 +1150,9 @@ mod tests {
             0b000000_00010_00001_00001_00000_000111,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], ((-2 as i32) << 1) as u32);
     }
 
@@ -1110,8 +1164,8 @@ mod tests {
             0b000000_00000_00001_00001_00011_000010,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 31 << 3);
     }
     #[test]
@@ -1122,8 +1176,8 @@ mod tests {
             0b000000_00000_00001_00001_01111_000010,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], ((-2 as i32) << 4) as u32 >> 15);
     }
 
@@ -1136,9 +1190,9 @@ mod tests {
             0b000000_00010_00001_00001_00000_000110,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 31 << 3);
     }
     #[test]
@@ -1150,9 +1204,9 @@ mod tests {
             0b000000_00010_00001_00001_00000_000110,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], ((-2 as i32) << 4) as u32 >> 15);
     }
 
@@ -1167,9 +1221,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_100010,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], minuend - subtrahend);
     }
     #[test]
@@ -1183,9 +1237,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_100010,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], (minuend - subtrahend) as i32 as u32);
     }
 
@@ -1200,9 +1254,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_100011,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], minuend - subtrahend);
     }
     #[test]
@@ -1216,9 +1270,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_100011,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(
             emu.regs[3],
             minuend as i32 as u32 - subtrahend as i32 as u32
@@ -1230,7 +1284,7 @@ mod tests {
     fn addi_pos() {
         let mut prog = le_byte_arr![0b001000_00000_00001_0000000000000000 | (i16::MAX as u32)];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], i16::MAX as u32);
     }
     #[test]
@@ -1239,7 +1293,7 @@ mod tests {
         let mut prog =
             le_byte_arr![0b001000_00000_00001_0000000000000000 | (-1 as i16 as u16 as u32)];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], -1 as i16 as i32 as u32);
     }
     #[test]
@@ -1254,19 +1308,19 @@ mod tests {
             0b001000_00100_00100_1111111111111111,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         #[cfg(target_arch = "wasm32")]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(v) => v.as_string().unwrap() == "overflow occurred",
                 _ => false,
             });
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(ErrorType::Overflow) => true,
                 _ => false,
             })
@@ -1278,7 +1332,7 @@ mod tests {
     fn addiu_small() {
         let mut prog = le_byte_arr![0b001001_00000_00001_0000000000000000 | 7];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 7);
     }
     #[test]
@@ -1286,7 +1340,7 @@ mod tests {
     fn addiu_big() {
         let mut prog = le_byte_arr![0b001001_00000_00001_0000000000000000 | (u16::MAX as u32)];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], u16::MAX as u32);
     }
 
@@ -1298,8 +1352,8 @@ mod tests {
             0b001100_00001_00010_1011000100111011,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[2], 0b1000000100101001);
     }
 
@@ -1314,9 +1368,9 @@ mod tests {
             0b001000_00000_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 2);
         assert_eq!(emu.regs[2], 0);
     }
@@ -1328,10 +1382,10 @@ mod tests {
             0b000000_00000_00000_0000000000000000,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         #[cfg(target_arch = "wasm32")]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(v) =>
                     v.as_string().unwrap()
                         == "program counter 132 out of bounds for max memory address 4",
@@ -1340,7 +1394,7 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(ErrorType::OutOfBounds { pc: 132, max: 4 }) => true,
                 _ => false,
             });
@@ -1357,9 +1411,9 @@ mod tests {
             0b001000_00000_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 2);
         assert_eq!(emu.regs[2], 0);
     }
@@ -1371,11 +1425,11 @@ mod tests {
             0b000000_00001_00000_00000_00000_001000,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         #[cfg(target_arch = "wasm32")]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(v) =>
                     v.as_string().unwrap()
                         == "misaligned program counter 0b00000000000000000000000000000001",
@@ -1384,7 +1438,7 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(ErrorType::MisalignedPC(0b00000000000000000000000000000001)) => true,
                 _ => false,
             })
@@ -1402,9 +1456,9 @@ mod tests {
             0b001000_00000_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 2);
         assert_eq!(emu.regs[2], 0);
         assert_eq!(emu.regs[31], 8);
@@ -1420,9 +1474,9 @@ mod tests {
             0b001000_00000_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 2);
         assert_eq!(emu.regs[2], 0);
         assert_eq!(emu.regs[31], 8);
@@ -1437,9 +1491,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_101010,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], 1);
     }
     #[test]
@@ -1451,9 +1505,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_101010,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], 0);
     }
     #[test]
@@ -1465,9 +1519,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_101010,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], 0);
     }
     #[test]
@@ -1479,9 +1533,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_101010,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], 1);
     }
 
@@ -1494,9 +1548,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_101001,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], 1);
     }
     #[test]
@@ -1508,9 +1562,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_101001,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], 0);
     }
     #[test]
@@ -1522,9 +1576,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_101001,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], 0);
     }
     #[test]
@@ -1536,9 +1590,9 @@ mod tests {
             0b000000_00001_00010_00011_00000_101001,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[3], 0);
     }
 
@@ -1550,8 +1604,8 @@ mod tests {
             0b001010_00001_00010_0000000000000000 | 2,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[2], 1);
     }
     #[test]
@@ -1562,8 +1616,8 @@ mod tests {
             0b001010_00001_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[2], 0);
     }
     #[test]
@@ -1574,8 +1628,8 @@ mod tests {
             0b001010_00001_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[2], 0);
     }
     #[test]
@@ -1586,8 +1640,8 @@ mod tests {
             0b001010_00001_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[2], 1);
     }
 
@@ -1599,8 +1653,8 @@ mod tests {
             0b001011_00001_00010_0000000000000000 | 2,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[2], 1);
     }
     #[test]
@@ -1611,8 +1665,8 @@ mod tests {
             0b001011_00001_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[2], 0);
     }
     #[test]
@@ -1623,8 +1677,8 @@ mod tests {
             0b001011_00001_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[2], 0);
     }
     #[test]
@@ -1635,8 +1689,8 @@ mod tests {
             0b001011_00001_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[2], 0);
     }
 
@@ -1645,7 +1699,7 @@ mod tests {
     fn beq_eq() {
         let mut prog = le_byte_arr![0b000100_00000_00001_0000000000000000 | 12];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.pc, 4 + 12);
     }
     #[test]
@@ -1656,8 +1710,8 @@ mod tests {
             0b000100_00000_00001_0000000000000000 | 12,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.pc, 8);
     }
 
@@ -1669,8 +1723,8 @@ mod tests {
             0b000101_00000_00001_0000000000000000 | 12,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.pc, 8 + 12);
     }
     #[test]
@@ -1678,7 +1732,7 @@ mod tests {
     fn bne_eq() {
         let mut prog = le_byte_arr![0b000101_00000_00001_0000000000000000 | 12];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.pc, 4);
     }
 
@@ -1687,7 +1741,7 @@ mod tests {
     fn blez_zero() {
         let mut prog = le_byte_arr![0b000110_00000_00000_0000000000000000 | 12];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.pc, 4 + 12);
     }
     #[test]
@@ -1698,8 +1752,8 @@ mod tests {
             0b000110_00001_00000_0000000000000000 | 12,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.pc, 8);
     }
     #[test]
@@ -1710,8 +1764,8 @@ mod tests {
             0b000110_00001_00000_0000000000000000 | 12,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.pc, 8 + 12);
     }
 
@@ -1720,7 +1774,7 @@ mod tests {
     fn bgtz_zero() {
         let mut prog = le_byte_arr![0b000111_00000_00000_0000000000000000 | 12];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.pc, 4);
     }
     #[test]
@@ -1731,8 +1785,8 @@ mod tests {
             0b000111_00001_00000_0000000000000000 | 12,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.pc, 8 + 12);
     }
 
@@ -1744,7 +1798,7 @@ mod tests {
             0b00000000_00000000_00101101_00000000,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 0b00101101);
     }
     #[test]
@@ -1755,7 +1809,7 @@ mod tests {
             (-7 as i8 as u8 as u32) << 8,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], -7 as i32 as u32);
     }
 
@@ -1767,7 +1821,7 @@ mod tests {
             0b00000000_00000000_00101101_00000000,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 0b00101101);
     }
     #[test]
@@ -1778,7 +1832,7 @@ mod tests {
             (-7 as i8 as u8 as u32) << 8,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], -7 as i8 as u8 as u32);
     }
 
@@ -1790,8 +1844,8 @@ mod tests {
             0b101000_00000_00001_0000000000000011,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(prog[3], (9185 & MASK8) as u8);
     }
 
@@ -1803,7 +1857,7 @@ mod tests {
             0b00000000_00000000_01001101_00101101,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 0b01001101_00101101);
     }
     #[test]
@@ -1814,7 +1868,7 @@ mod tests {
             -7 as i16 as u16 as u32,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], -7 as i32 as u32);
     }
     #[test]
@@ -1824,7 +1878,7 @@ mod tests {
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(v) =>
                     v.as_string().unwrap()
                         == "misaligned load-half from 0b00000000000000000000000000000101",
@@ -1833,7 +1887,7 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(ErrorType::MisalignedLH(0b00000000000000000000000000000101)) => true,
                 _ => false,
             })
@@ -1848,7 +1902,7 @@ mod tests {
             0b00000000_00000000_01001101_00101101,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 0b01001101_00101101);
     }
     #[test]
@@ -1859,7 +1913,7 @@ mod tests {
             -7 as i16 as u16 as u32,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], -7 as i16 as u16 as u32);
     }
     #[test]
@@ -1869,7 +1923,7 @@ mod tests {
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(v) =>
                     v.as_string().unwrap()
                         == "misaligned load-half from 0b00000000000000000000000000000101",
@@ -1878,7 +1932,7 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(ErrorType::MisalignedLH(0b00000000000000000000000000000101)) => true,
                 _ => false,
             })
@@ -1893,8 +1947,8 @@ mod tests {
             0b101001_00000_00001_0000000000000010,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(unsafe { prog.align_to::<u16>() }.1[1], 9185);
     }
     #[test]
@@ -1904,7 +1958,7 @@ mod tests {
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(v) =>
                     v.as_string().unwrap()
                         == "misaligned save-half to 0b00000000000000000000000000000011",
@@ -1913,7 +1967,7 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(ErrorType::MisalignedSH(0b00000000000000000000000000000011)) => true,
                 _ => false,
             })
@@ -1928,7 +1982,7 @@ mod tests {
             0b01010011_10011001_11001101_10101101,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], 0b01010011_10011001_11001101_10101101);
     }
     #[test]
@@ -1936,7 +1990,7 @@ mod tests {
     fn lw_neg() {
         let mut prog = le_byte_arr![0b100011_00000_00001_0000000000000100, -7 as i32 as u32,];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.regs[1], -7 as i32 as u32);
     }
     #[test]
@@ -1946,7 +2000,7 @@ mod tests {
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(v) =>
                     v.as_string().unwrap()
                         == "misaligned load-word from 0b00000000000000000000000000000010",
@@ -1955,7 +2009,7 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(ErrorType::MisalignedLW(0b00000000000000000000000000000010)) => true,
                 _ => false,
             })
@@ -1970,8 +2024,8 @@ mod tests {
             0b101011_00000_00001_0000000000000100,
         ];
         let mut emu = Emulator::new();
-        emu.step(&mut prog).unwrap();
-        emu.step(&mut prog).unwrap();
+        emu.step(&mut prog, None).unwrap();
+        emu.step(&mut prog, None).unwrap();
         assert_eq!(unsafe { prog.align_to::<u32>() }.1[1], -9185 as i32 as u32);
     }
     #[test]
@@ -1981,7 +2035,7 @@ mod tests {
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(v) =>
                     v.as_string().unwrap()
                         == "misaligned save-word to 0b00000000000000000000000000010010",
@@ -1990,8 +2044,87 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(ErrorType::MisalignedSW(0b00000000000000000000000000010010)) => true,
+                _ => false,
+            })
+        }
+    }
+
+    // TODO: figure out how to write syscall tests for wasm32
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn syscall_no_rvalues() {
+        let mut prog = le_byte_arr![
+            0b001000_00000_00100_0000000000000000 | 4,
+            0b001000_00000_00101_0000000000000000 | 5,
+            0b001000_00000_00110_0000000000000000 | 6,
+            0b001000_00000_00111_0000000000000000 | 7,
+            0b011010_00000000000000000000000000
+        ];
+        let mut emu = Emulator::new();
+        emu.step(
+            &mut prog,
+            Some(&|args: &[u32; 4]| -> [Option<u32>; 2] {
+                assert_eq!(args, &[4, 5, 6, 7]);
+                [None, None]
+            }),
+        )
+        .unwrap();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn syscall_first_rvalue() {
+        let mut prog = le_byte_arr![0b011010_00000000000000000000000000];
+        let mut emu = Emulator::new();
+        emu.step(
+            &mut prog,
+            Some(&|_: &[u32; 4]| -> [Option<u32>; 2] { [Some(17), None] }),
+        )
+        .unwrap();
+        assert_eq!(emu.regs[2], 17);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn syscall_second_rvalue() {
+        let mut prog = le_byte_arr![0b011010_00000000000000000000000000];
+        let mut emu = Emulator::new();
+        emu.step(
+            &mut prog,
+            Some(&|_: &[u32; 4]| -> [Option<u32>; 2] { [None, Some(98)] }),
+        )
+        .unwrap();
+        assert_eq!(emu.regs[3], 98);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn syscall_both_rvalues() {
+        let mut prog = le_byte_arr![0b011010_00000000000000000000000000];
+        let mut emu = Emulator::new();
+        emu.step(
+            &mut prog,
+            Some(&|_: &[u32; 4]| -> [Option<u32>; 2] { [Some(9115), Some(919)] }),
+        )
+        .unwrap();
+        assert_eq!(emu.regs[2], 9115);
+        assert_eq!(emu.regs[3], 919);
+    }
+    #[test]
+    #[wasm_bindgen_test]
+    fn no_syscall_handler() {
+        let mut prog = le_byte_arr![0b011010_00000000000000000000000000];
+        let mut emu = Emulator::new();
+        #[cfg(target_arch = "wasm32")]
+        {
+            assert!(match emu.step(&mut prog, None) {
+                Err(v) => v.as_string().unwrap() == "invalid opcode 0b011010",
+                _ => false,
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            assert!(match emu.step(&mut prog, None) {
+                Err(ErrorType::InvalidOpcode(0b011010)) => true,
                 _ => false,
             })
         }
@@ -2004,14 +2137,14 @@ mod tests {
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(v) => v.as_string().unwrap() == "invalid function 0b111111",
                 _ => false,
             });
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(ErrorType::InvalidFunction(0b111111)) => true,
                 _ => false,
             });
@@ -2025,14 +2158,14 @@ mod tests {
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(v) => v.as_string().unwrap() == "invalid opcode 0b111111",
                 _ => false,
             });
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
+            assert!(match emu.step(&mut prog, None) {
                 Err(ErrorType::InvalidOpcode(0b111111)) => true,
                 _ => false,
             })
