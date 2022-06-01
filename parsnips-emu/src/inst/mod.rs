@@ -211,9 +211,9 @@ impl BranchZFields for Inst {
 }
 
 pub trait LoadStoreFields {
-    fn rt(&self) -> usize;
     fn rs(&self) -> usize;
-    fn imm(&self) -> u16;
+    fn rt(&self) -> usize;
+    fn imm(&self) -> i32;
 }
 impl LoadStoreFields for Inst {
     #[inline(always)]
@@ -225,8 +225,8 @@ impl LoadStoreFields for Inst {
         (self >> 16 & MASK5) as usize
     }
     #[inline(always)]
-    fn imm(&self) -> u16 {
-        (self & MASK16) as u16
+    fn imm(&self) -> i32 {
+        (self & MASK16) as i16 as i32
     }
 }
 
@@ -249,28 +249,5 @@ impl TrapFields for Inst {
     #[inline(always)]
     fn imm(&self) -> u32 {
         self & MASK26
-    }
-}
-
-// TODO: write tests for all traits to verify that they get the right fields
-
-#[cfg(test)]
-mod tests {
-    use super::Inst;
-
-    const REG_INST: Inst = 0b000001_00010_00011_00100_00101_000110;
-
-    #[test]
-    fn opfields() {
-        use super::InstFields;
-
-        assert_eq!(REG_INST.op(), 1);
-    }
-
-    #[test]
-    fn reg_fields() {
-        use super::RegFields;
-
-        assert_eq!(REG_INST.funct(), 6);
     }
 }

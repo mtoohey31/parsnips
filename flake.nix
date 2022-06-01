@@ -18,12 +18,18 @@
           channel = "nightly";
           sha256 = "LE515NwqEieN9jVZcpkGGmd5VLXTix3TTUNiXb01sJM=";
         };
+        rust = rustChannel.rust.override (old: {
+          extensions = old.extensions ++ [ "llvm-tools-preview" ];
+          targets = old.targets ++ [ "wasm32-unknown-unknown" ];
+        });
         naersk-lib = naersk.lib."${system}".override {
-          cargo = rustChannel.rust;
-          rustc = rustChannel.rust;
+          cargo = rust;
+          rustc = rust;
         };
       in
       rec {
+        # TODO: flakify parsnips-web
+
         packages.default = naersk-lib.buildPackage {
           pname = "parsnips";
           root = ./.;
@@ -31,18 +37,50 @@
 
         apps.default = utils.lib.mkApp {
           drv = packages.default;
-          exePath = "/bin/pn";
+          exePath = "/bin/par";
         };
 
-        devShells.default = pkgs.mkShell {
-          nativeBuildInputs = [
-            rustChannel.rust
-            pkgs.evcxr
-            pkgs.rust-analyzer
-          ];
-          shellHook = ''
-            export RUST_SRC_PATH="${rustChannel.rust-src}/lib/rustlib/src/rust/library"
-          '';
-        };
+        devShells =
+          let
+            pkgsMinimal = [ rust ] ++ (with pkgs; [
+              nodejs
+              (wasm-bindgen-cli.overrideAttrs (oldAttrs: rec {
+                version = "0.2.80";
+                src = fetchCrate {
+                  inherit (oldAttrs) pname;
+                  inherit version;
+                  sha256 = "f3XRVuK892TE6xP7eq3aKpl9d3fnOFxLh+/K59iWPAg=";
+
+                };
+                cargoDeps = oldAttrs.cargoDeps.overrideAttrs (_: {
+                  inherit src;
+                  outputHash = "sha256-sqBsfNYncwWpEA+E0I98WcrvPKLB9xn1CHK1BQv/wVQ=";
+                });
+              }))
+              wasm-pack
+            ] ++ (with nodePackages; [ pnpm prettier ]));
+            pkgsTools = with pkgs; [
+              binaryen
+              evcxr
+              grcov
+              rust-analyzer
+            ] ++ (with nodePackages; [
+              svelte-language-server
+              nodePackages."@tailwindcss/language-server"
+              typescript
+              typescript-language-server
+            ]);
+          in
+          {
+            default = pkgs.mkShell {
+              nativeBuildInputs = pkgsMinimal ++ pkgsTools;
+              shellHook = ''
+                export RUST_SRC_PATH="${rustChannel.rust-src}/lib/rustlib/src/rust/library"
+              '';
+            };
+            ci = pkgs.mkShell {
+              nativeBuildInputs = pkgsMinimal;
+            };
+          };
       });
 }
