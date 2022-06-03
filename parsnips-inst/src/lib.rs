@@ -1,6 +1,4 @@
-// source: https://student.cs.uwaterloo.ca/~isg/res/mips/opcodes
-// TODO: figure out how to make this less boilerplatey, maybe with a proceedural
-// macro?
+#![no_std]
 
 pub mod function;
 pub mod opcode;
@@ -9,6 +7,10 @@ const MASK5: u32 = (1 << 5) - 1;
 const MASK6: u32 = (1 << 6) - 1;
 const MASK16: u32 = (1 << 16) - 1;
 const MASK26: u32 = (1 << 26) - 1;
+
+// source: https://student.cs.uwaterloo.ca/~isg/res/mips/opcodes
+// TODO: figure out how to make this less boilerplatey, maybe with a proceedural
+// macro?
 
 pub type Inst = u32;
 pub trait InstFields {
