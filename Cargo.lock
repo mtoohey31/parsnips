@@ -223,10 +223,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e22443d1643a904602595ba1cd8f7d896afe56d26712531c5ff73a15b2fbf64"
 
 [[package]]
+name = "parsnips-c"
+version = "0.1.0"
+dependencies = [
+ "parsnips-parser",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+]
+
+[[package]]
 name = "parsnips-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "parsnips-c",
  "parsnips-emu",
 ]
 
@@ -235,10 +245,15 @@ name = "parsnips-emu"
 version = "0.1.0"
 dependencies = [
  "js-sys",
+ "parsnips-inst",
  "parsnips-parser",
  "wasm-bindgen",
  "wasm-bindgen-test",
 ]
+
+[[package]]
+name = "parsnips-inst"
+version = "0.1.0"
 
 [[package]]
 name = "parsnips-parser"

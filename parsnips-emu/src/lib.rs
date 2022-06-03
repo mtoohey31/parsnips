@@ -251,8 +251,8 @@ fn panic(_: &PanicInfo) -> ! {
     loop {}
 }
 
-mod inst;
 use inst::{opcode::*, Inst};
+use parsnips_inst as inst;
 
 const MASK8: u32 = (1 << 8) - 1;
 const MASK16: u32 = (1 << 16) - 1;
