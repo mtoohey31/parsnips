@@ -14,9 +14,9 @@
           inherit system;
         };
         rustChannel = pkgs.rustChannelOf {
-          date = "2022-04-24";
+          date = "2022-06-16";
           channel = "nightly";
-          sha256 = "LE515NwqEieN9jVZcpkGGmd5VLXTix3TTUNiXb01sJM=";
+          sha256 = "hyoxYCHN6GXx010xd7K+AihPeKugFIrB/wP89ePVsPo=";
         };
         rust = rustChannel.rust.override (old: {
           extensions = old.extensions ++ [ "llvm-tools-preview" ];
@@ -44,19 +44,7 @@
           let
             pkgsMinimal = [ rust ] ++ (with pkgs; [
               nodejs
-              (wasm-bindgen-cli.overrideAttrs (oldAttrs: rec {
-                version = "0.2.80";
-                src = fetchCrate {
-                  inherit (oldAttrs) pname;
-                  inherit version;
-                  sha256 = "f3XRVuK892TE6xP7eq3aKpl9d3fnOFxLh+/K59iWPAg=";
-
-                };
-                cargoDeps = oldAttrs.cargoDeps.overrideAttrs (_: {
-                  inherit src;
-                  outputHash = "sha256-sqBsfNYncwWpEA+E0I98WcrvPKLB9xn1CHK1BQv/wVQ=";
-                });
-              }))
+              wasm-bindgen-cli
               wasm-pack
             ] ++ (with nodePackages; [ pnpm prettier ]));
             pkgsTools = with pkgs; [
