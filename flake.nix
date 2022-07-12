@@ -51,6 +51,7 @@
               binaryen
               evcxr
               grcov
+              cargo-watch
               rust-analyzer
             ] ++ (with nodePackages; [
               svelte-language-server
