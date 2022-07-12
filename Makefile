@@ -1,4 +1,4 @@
-.PHONY: all build test test-emu test-web check-fmt fmt clean
+.PHONY: all build test test-emu test-parser test-web check-fmt fmt clean
 
 CLI_DEPS=parsnips-cli/Cargo.toml Cargo.lock parsnips-cli/src/**
 EMU_DEPS=parsnips-emu/Cargo.toml Cargo.lock parsnips-emu/src/**
@@ -12,11 +12,14 @@ check-fmt:
 fmt:
 	rustfmt $$(find . -name '*.rs')
 
-test: test-emu test-web
+test: test-emu test-parser test-web
 
 test-emu:
 	cargo test -p parsnips-emu --quiet
 	cd parsnips-emu && wasm-pack test --node --mode no-install
+
+test-parser:
+	cargo test -p parsnips-parser --quiet
 
 test-web: parsnips-web/node_modules parsnips-web/node_modules/parsnips-emu
 	cd parsnips-web && pnpm run check

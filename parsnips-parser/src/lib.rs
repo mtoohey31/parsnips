@@ -1,6 +1,11 @@
-#[macro_use]
-extern crate pest_derive;
+#![no_std]
 
-#[derive(Parser)]
-#[grammar = "mips.pest"]
-pub struct MIPSParser;
+#[cfg(test)]
+#[macro_use]
+extern crate alloc;
+
+mod lex;
+mod parse;
+
+pub use parse::parse;
+pub use parse::Ast;
