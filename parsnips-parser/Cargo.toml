@@ -8,9 +8,3 @@ readme = "../README.md"
 homepage = "https://github.com/mtoohey31/parsnips"
 repository = "https://github.com/mtoohey31/parsnips"
 license = "MIT OR Apache-2.0"
-
-[dependencies]
-# for creating the parser
-pest = "2.1.3"
-# for creating the parser with a procedural macro from a .pest file
-pest_derive = "2.1.0"
