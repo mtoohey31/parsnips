@@ -1,6 +1,10 @@
-use core::{iter, num::IntErrorKind};
+use core::{
+    iter,
+    num::{IntErrorKind, TryFromIntError},
+};
 
-#[cfg_attr(test, derive(PartialEq, Eq, Debug))]
+#[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Eq)]
 pub enum Token<'a> {
     Dot,
     Comma,
@@ -15,7 +19,8 @@ pub enum Token<'a> {
     Literal(LiteralToken<'a>),
 }
 
-#[cfg_attr(test, derive(PartialEq, Eq, Debug))]
+#[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Eq)]
 pub enum LiteralToken<'a> {
     Int(i32),
     Uint(u32),
@@ -24,6 +29,7 @@ pub enum LiteralToken<'a> {
 }
 
 #[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Eq)]
 pub enum LexError {
     ParseIntError(IntErrorKind),
     UnexpectedToken(char),
@@ -73,36 +79,46 @@ pub fn lex<'a>(input: &'a str) -> impl Iterator<Item = Result<Token<'a>, LexErro
     iter::from_fn(move || {
         cur.next().map(|c| match c {
             // TODO: consume the rest of the string, and handle binary, octal, and hex literals
-            '0'..='9' => {
-                let radix = if cur.prev().unwrap() == '0' {
+            '0'..='9' | '-' => {
+                let negative = cur.prev().unwrap() == '-';
+                if negative {
+                    cur.next();
+                }
+                let (radix, str) = if cur.prev().unwrap() == '0' {
                     match cur.next() {
-                        Some('b') => 2,
-                        Some('o') => 8,
-                        Some('x') => 16,
+                        Some('b') => (2, take_while!(cur, is_binary_digit)),
+                        Some('o') => (8, take_while!(cur, is_octal_digit)),
+                        Some('x') => (16, take_while!(cur, is_hex_digit)),
                         _ => {
                             cur.back();
                             cur.back();
-                            10
+                            (10, take_while!(cur, is_decimal_digit))
                         }
                     }
                 } else {
                     cur.back();
-                    10
+                    (10, take_while!(cur, is_decimal_digit))
                 };
 
-                let n = i64::from_str_radix(take_while!(cur, is_digit), radix)
-                    .map_err(|e| LexError::ParseIntError(e.kind().clone()))?;
-                // TODO: provide ways to manually specify signed vs unsigned int literals
-                if n.is_negative() {
-                    if n < i32::MIN as i64 {
-                        Err(LexError::ParseIntError(IntErrorKind::NegOverflow))
+                let n = u32::from_str_radix(str, radix).map_err(|e| {
+                    LexError::ParseIntError(if negative {
+                        // Map positive overflows to negative ones when the number is negative
+                        match e.kind().clone() {
+                            IntErrorKind::PosOverflow => IntErrorKind::NegOverflow,
+                            o => o,
+                        }
                     } else {
-                        Ok(Token::Literal(LiteralToken::Int(n as i32)))
+                        e.kind().clone()
+                    })
+                })?;
+                // TODO: provide ways to manually specify signed vs unsigned int literals
+                if negative {
+                    match i32::try_from(n) {
+                        Ok(i) => Ok(Token::Literal(LiteralToken::Int(i * -1))),
+                        Err(_) => Err(LexError::ParseIntError(IntErrorKind::NegOverflow)),
                     }
                 } else {
-                    // in this case, we can safely return n as a u32, because a positive i64 will
-                    // fit within the size of a u32
-                    Ok(Token::Literal(LiteralToken::Uint(n as u32)))
+                    Ok(Token::Literal(LiteralToken::Uint(n)))
                 }
             }
             '\'' => {
@@ -167,9 +183,23 @@ fn is_whitespace(c: char) -> bool {
 }
 
 #[inline(always)]
-fn is_digit(c: char) -> bool {
-    // taken from https://github.com/rust-lang/rust/blob/master/compiler/rustc_lexer/src/lib.rs
+fn is_decimal_digit(c: char) -> bool {
     matches!(c, '0'..='9')
+}
+
+#[inline(always)]
+fn is_binary_digit(c: char) -> bool {
+    matches!(c, '0' | '1')
+}
+
+#[inline(always)]
+fn is_octal_digit(c: char) -> bool {
+    matches!(c, '0'..='7')
+}
+
+#[inline(always)]
+fn is_hex_digit(c: char) -> bool {
+    matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F')
 }
 
 #[inline(always)]
@@ -179,7 +209,7 @@ fn is_ident_start(c: char) -> bool {
 
 #[inline(always)]
 fn is_ident(c: char) -> bool {
-    is_ident_start(c) || is_digit(c)
+    is_ident_start(c) || is_decimal_digit(c)
 }
 
 #[cfg(test)]
@@ -236,6 +266,72 @@ mod tests {
         assert_eq!(
             lex("# a comment").map(Result::unwrap).collect::<Vec<_>>(),
             vec![Token::Comment(" a comment")]
+        )
+    }
+
+    #[test]
+    fn int() {
+        assert_eq!(
+            lex("-5894").map(Result::unwrap).collect::<Vec<_>>(),
+            vec![Token::Literal(LiteralToken::Int(-5894))]
+        )
+    }
+
+    #[test]
+    fn uint() {
+        assert_eq!(
+            lex("5894").map(Result::unwrap).collect::<Vec<_>>(),
+            vec![Token::Literal(LiteralToken::Uint(5894))]
+        )
+    }
+
+    #[test]
+    fn negative_overflow() {
+        assert_eq!(
+            lex("-584654654654654654694")
+                .find_map(|r| match r {
+                    Ok(_) => None,
+                    Err(e) => Some(e),
+                })
+                .unwrap(),
+            LexError::ParseIntError(IntErrorKind::NegOverflow)
+        )
+    }
+
+    #[test]
+    fn positive_overflow() {
+        assert_eq!(
+            lex("584654654654654654694")
+                .find_map(|r| match r {
+                    Ok(_) => None,
+                    Err(e) => Some(e),
+                })
+                .unwrap(),
+            LexError::ParseIntError(IntErrorKind::PosOverflow)
+        )
+    }
+
+    #[test]
+    fn binary() {
+        assert_eq!(
+            lex("-0b0100").map(Result::unwrap).collect::<Vec<_>>(),
+            vec![Token::Literal(LiteralToken::Int(-4))]
+        )
+    }
+
+    #[test]
+    fn ocatal() {
+        assert_eq!(
+            lex("-0o0700").map(Result::unwrap).collect::<Vec<_>>(),
+            vec![Token::Literal(LiteralToken::Int(-448))]
+        )
+    }
+
+    #[test]
+    fn hex() {
+        assert_eq!(
+            lex("-0x0AbE").map(Result::unwrap).collect::<Vec<_>>(),
+            vec![Token::Literal(LiteralToken::Int(-2750))]
         )
     }
 }
