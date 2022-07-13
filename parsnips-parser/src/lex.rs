@@ -19,6 +19,8 @@ pub enum Token<'a> {
     Literal(LiteralToken<'a>),
 }
 
+// TODO: these shouldn't store actual values, the actual numerical parsing should happen in the
+// parser stage, not the lexer
 #[cfg_attr(test, derive(Debug))]
 #[derive(PartialEq, Eq)]
 pub enum LiteralToken<'a> {
