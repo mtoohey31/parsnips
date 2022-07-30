@@ -1,7 +1,5 @@
-use core::{
-    iter,
-    num::{IntErrorKind, TryFromIntError},
-};
+extern crate alloc;
+use alloc::vec::Vec;
 
 #[cfg_attr(test, derive(Debug))]
 #[derive(PartialEq, Eq)]
@@ -19,146 +17,208 @@ pub enum Token<'a> {
     Literal(LiteralToken<'a>),
 }
 
-// TODO: these shouldn't store actual values, the actual numerical parsing should happen in the
-// parser stage, not the lexer
+#[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Eq)]
+pub enum NumKind {
+    Binary,
+    Octal,
+    Decimal,
+    Hex,
+}
+
 #[cfg_attr(test, derive(Debug))]
 #[derive(PartialEq, Eq)]
 pub enum LiteralToken<'a> {
-    Int(i32),
-    Uint(u32),
+    Num {
+        negative: bool,
+        kind: NumKind,
+        body: &'a str,
+    },
     Char(char),
     Str(&'a str),
 }
 
 #[cfg_attr(test, derive(Debug))]
 #[derive(PartialEq, Eq)]
-pub enum LexError {
-    ParseIntError(IntErrorKind),
+pub enum LexErrorKind {
     UnexpectedToken(char),
     InvalidCharEscape(char),
     UnterminatedChar,
     NonSingleChar,
+    UnterminatedStr,
+    UnterminatedNum,
 }
 
-struct Cursor<'a> {
-    input: &'a str,
-    current: usize,
+#[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Eq)]
+pub struct LexError {
+    pos: (usize, usize),
+    kind: LexErrorKind,
 }
 
-// TODO: don't use `chars().nth()`, it's really inefficient.
-impl<'a> Cursor<'a> {
-    fn next(&mut self) -> Option<char> {
-        let c = self.input.chars().nth(self.current);
-        self.current += 1;
-        c
-    }
-
-    fn prev(&self) -> Option<char> {
-        self.input.chars().nth(self.current - 1)
-    }
-
-    fn back(&mut self) {
-        self.current -= 1;
-    }
-}
-
-macro_rules! take_while {
-    ($c:expr, $x:expr) => {{
-        let start = $c.current;
-        while let Some(c) = $c.input.chars().nth($c.current) {
-            if !$x(c) {
-                break;
-            }
-
-            $c.current += 1;
+impl LexError {
+    fn at(point: usize, kind: LexErrorKind) -> Self {
+        Self {
+            pos: (point, point + 1),
+            kind,
         }
-        &$c.input[start..$c.current]
+    }
+
+    fn from(start: usize, end: usize, kind: LexErrorKind) -> Self {
+        Self {
+            pos: (start, end),
+            kind,
+        }
+    }
+}
+
+macro_rules! failing_pos {
+    ($f:expr, $ci:expr, $x:expr) => {{
+        let mut f = $f;
+        loop {
+            match $ci.peek() {
+                Some((nf, c)) => {
+                    f = *nf;
+                    if !$x(*c) {
+                        break;
+                    }
+
+                    $ci.next().unwrap();
+                }
+                None => {
+                    f += 1;
+                    break;
+                }
+            }
+        }
+        f
     }};
 }
 
-pub fn lex<'a>(input: &'a str) -> impl Iterator<Item = Result<Token<'a>, LexError>> {
-    let mut cur = Cursor { input, current: 0 };
-    iter::from_fn(move || {
-        cur.next().map(|c| match c {
-            // TODO: consume the rest of the string, and handle binary, octal, and hex literals
+pub fn lex<'a>(input: &'a str) -> Result<Vec<Token<'a>>, LexError> {
+    let mut ci = input.char_indices().peekable();
+    let mut tokens = Vec::new();
+    'OUTER: while let Some((mut pos, mut c)) = ci.next() {
+        match c {
             '0'..='9' | '-' => {
-                let negative = cur.prev().unwrap() == '-';
+                let negative = c == '-';
                 if negative {
-                    cur.next();
+                    (pos, c) = ci
+                        .next()
+                        .ok_or(LexError::at(pos, LexErrorKind::UnterminatedNum))?;
+                    if !matches!(c, '0'..='9') {
+                        return Err(LexError::at(pos, LexErrorKind::UnterminatedNum));
+                    }
                 }
-                let (radix, str) = if cur.prev().unwrap() == '0' {
-                    match cur.next() {
-                        Some('b') => (2, take_while!(cur, is_binary_digit)),
-                        Some('o') => (8, take_while!(cur, is_octal_digit)),
-                        Some('x') => (16, take_while!(cur, is_hex_digit)),
-                        _ => {
-                            cur.back();
-                            cur.back();
-                            (10, take_while!(cur, is_decimal_digit))
+                tokens.push(Token::Literal(if c == '0' {
+                    match ci.peek() {
+                        Some((_, 'b')) => {
+                            ci.next().unwrap();
+                            LiteralToken::Num {
+                                negative,
+                                kind: NumKind::Binary,
+                                body: &input[pos + 2..failing_pos!(pos + 2, ci, is_binary_digit)],
+                            }
                         }
+                        Some((_, 'o')) => {
+                            ci.next().unwrap();
+                            LiteralToken::Num {
+                                negative,
+                                kind: NumKind::Octal,
+                                body: &input[pos + 2..failing_pos!(pos + 2, ci, is_octal_digit)],
+                            }
+                        }
+                        Some((_, 'x')) => {
+                            ci.next().unwrap();
+                            LiteralToken::Num {
+                                negative,
+                                kind: NumKind::Hex,
+                                body: &input[pos + 2..failing_pos!(pos + 2, ci, is_hex_digit)],
+                            }
+                        }
+                        _ => LiteralToken::Num {
+                            negative,
+                            kind: NumKind::Decimal,
+                            body: &input[pos..failing_pos!(pos, ci, is_decimal_digit)],
+                        },
                     }
                 } else {
-                    cur.back();
-                    (10, take_while!(cur, is_decimal_digit))
-                };
-
-                let n = u32::from_str_radix(str, radix).map_err(|e| {
-                    LexError::ParseIntError(if negative {
-                        // Map positive overflows to negative ones when the number is negative
-                        match e.kind().clone() {
-                            IntErrorKind::PosOverflow => IntErrorKind::NegOverflow,
-                            o => o,
-                        }
-                    } else {
-                        e.kind().clone()
-                    })
-                })?;
-                // TODO: provide ways to manually specify signed vs unsigned int literals
-                if negative {
-                    match i32::try_from(n) {
-                        Ok(i) => Ok(Token::Literal(LiteralToken::Int(i * -1))),
-                        Err(_) => Err(LexError::ParseIntError(IntErrorKind::NegOverflow)),
+                    LiteralToken::Num {
+                        negative,
+                        kind: NumKind::Decimal,
+                        body: &input[pos..failing_pos!(pos, ci, is_decimal_digit)],
                     }
-                } else {
-                    Ok(Token::Literal(LiteralToken::Uint(n)))
-                }
+                }));
             }
             '\'' => {
-                let res = match cur.next() {
-                    Some('\\') => match cur.next() {
-                        Some('t') => Ok(Token::Literal(LiteralToken::Char('\t'))),
-                        Some('n') => Ok(Token::Literal(LiteralToken::Char('\n'))),
-                        Some('\\') => Ok(Token::Literal(LiteralToken::Char('\\'))),
-                        Some(c) => Err(LexError::InvalidCharEscape(c)),
-                        None => Err(LexError::UnterminatedChar),
+                let (mut pos, res) = match ci.next() {
+                    Some((pos, '\\')) => match ci.next() {
+                        Some((pos, 't')) => (pos, Ok(Token::Literal(LiteralToken::Char('\t')))),
+                        Some((pos, 'n')) => (pos, Ok(Token::Literal(LiteralToken::Char('\n')))),
+                        Some((pos, '\\')) => (pos, Ok(Token::Literal(LiteralToken::Char('\\')))),
+                        Some((pos, c)) => (
+                            pos,
+                            Err(LexError::at(pos, LexErrorKind::InvalidCharEscape(c))),
+                        ),
+                        None => (
+                            pos,
+                            Err(LexError::at(pos + 1, LexErrorKind::UnterminatedChar)),
+                        ),
                     },
-                    Some(c) => Ok(Token::Literal(LiteralToken::Char(c))),
-                    None => Err(LexError::UnterminatedChar),
+                    Some((pos, c)) => (pos, Ok(Token::Literal(LiteralToken::Char(c)))),
+                    None => (
+                        pos,
+                        Err(LexError::at(pos + 1, LexErrorKind::UnterminatedChar)),
+                    ),
                 };
-                if cur.next().ok_or(LexError::UnterminatedChar)? != '\'' {
-                    return Err(LexError::NonSingleChar);
+                (pos, c) = ci
+                    .next()
+                    .ok_or(LexError::at(pos, LexErrorKind::UnterminatedChar))?;
+                if c != '\'' {
+                    return Err(LexError::at(pos, LexErrorKind::NonSingleChar));
                 };
-                res
+                tokens.push(res?);
             }
-            '#' => Ok(Token::Comment(take_while!(cur, |c| !is_newline(c)))),
-            '.' => Ok(Token::Dot),
-            ',' => Ok(Token::Comma),
-            ':' => Ok(Token::Colon),
-            '(' => Ok(Token::OpenParen),
-            ')' => Ok(Token::CloseParen),
-            '$' => Ok(Token::Dollar),
-            '\n' | '\u{0085}' | '\u{2029}' => Ok(Token::Newline),
+            '"' => {
+                let p = pos;
+                while let Some((p, c)) = ci.next() {
+                    match c {
+                        '"' => {
+                            tokens.push(Token::Literal(LiteralToken::Str(&input[pos + 1..p])));
+                            continue 'OUTER;
+                        }
+                        '\\' => {
+                            handle_escape(
+                                ci.next()
+                                    .ok_or(LexError::at(p, LexErrorKind::UnterminatedStr))?,
+                            )?;
+                        }
+                        _ => {}
+                    }
+                }
+                return Err(LexError::at(p, LexErrorKind::UnterminatedStr));
+            }
+            '#' => tokens.push(Token::Comment(
+                &input[pos + 1..failing_pos!(pos, ci, |c| !is_newline(c))],
+            )),
+            '.' => tokens.push(Token::Dot),
+            ',' => tokens.push(Token::Comma),
+            ':' => tokens.push(Token::Colon),
+            '(' => tokens.push(Token::OpenParen),
+            ')' => tokens.push(Token::CloseParen),
+            '$' => tokens.push(Token::Dollar),
+            '\n' | '\u{0085}' | '\u{2029}' => tokens.push(Token::Newline),
 
-            c if is_whitespace(c) => Ok(Token::Whitespace),
+            c if is_whitespace(c) => tokens.push(Token::Whitespace),
 
             c if is_ident_start(c) => {
-                cur.back();
-                Ok(Token::Ident(take_while!(cur, is_ident)))
+                tokens.push(Token::Ident(&input[pos..failing_pos!(pos, ci, is_ident)]))
             }
 
-            _ => Err(LexError::UnexpectedToken(c)),
-        })
-    })
+            _ => return Err(LexError::at(pos, LexErrorKind::UnexpectedToken(c))),
+        };
+    }
+    Ok(tokens)
 }
 
 #[inline(always)]
@@ -214,6 +274,16 @@ fn is_ident(c: char) -> bool {
     is_ident_start(c) || is_decimal_digit(c)
 }
 
+#[inline(always)]
+fn handle_escape((pos, c): (usize, char)) -> Result<char, LexError> {
+    match c {
+        't' => Ok('\t'),
+        'n' => Ok('\n'),
+        '\\' => Ok('\\'),
+        c => Err(LexError::at(pos, LexErrorKind::InvalidCharEscape(c))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::vec::Vec;
@@ -224,7 +294,8 @@ mod tests {
     fn basic() {
         assert_eq!(
             lex(include_str!("../tests/basic.asm"))
-                .map(Result::unwrap)
+                .unwrap()
+                .into_iter()
                 .filter(|t| *t != Token::Whitespace)
                 .collect::<Vec<_>>(),
             vec![
@@ -238,7 +309,11 @@ mod tests {
                 Token::Dollar,
                 Token::Ident("zero"),
                 Token::Comma,
-                Token::Literal(LiteralToken::Uint(13)),
+                Token::Literal(LiteralToken::Num {
+                    negative: false,
+                    kind: NumKind::Decimal,
+                    body: "13"
+                }),
                 Token::Newline,
                 Token::Ident("addi"),
                 Token::Dollar,
@@ -247,7 +322,11 @@ mod tests {
                 Token::Dollar,
                 Token::Ident("zero"),
                 Token::Comma,
-                Token::Literal(LiteralToken::Uint(26)),
+                Token::Literal(LiteralToken::Num {
+                    negative: false,
+                    kind: NumKind::Decimal,
+                    body: "26"
+                }),
                 Token::Newline,
                 Token::Ident("add"),
                 Token::Dollar,
@@ -266,7 +345,7 @@ mod tests {
     #[test]
     fn comment() {
         assert_eq!(
-            lex("# a comment").map(Result::unwrap).collect::<Vec<_>>(),
+            lex("# a comment").unwrap().into_iter().collect::<Vec<_>>(),
             vec![Token::Comment(" a comment")]
         )
     }
@@ -274,16 +353,24 @@ mod tests {
     #[test]
     fn int() {
         assert_eq!(
-            lex("-5894").map(Result::unwrap).collect::<Vec<_>>(),
-            vec![Token::Literal(LiteralToken::Int(-5894))]
+            lex("-5894").unwrap().into_iter().collect::<Vec<_>>(),
+            vec![Token::Literal(LiteralToken::Num {
+                negative: true,
+                kind: NumKind::Decimal,
+                body: "5894"
+            })]
         )
     }
 
     #[test]
     fn uint() {
         assert_eq!(
-            lex("5894").map(Result::unwrap).collect::<Vec<_>>(),
-            vec![Token::Literal(LiteralToken::Uint(5894))]
+            lex("5894").unwrap().into_iter().collect::<Vec<_>>(),
+            vec![Token::Literal(LiteralToken::Num {
+                negative: false,
+                kind: NumKind::Decimal,
+                body: "5894"
+            })]
         )
     }
 
@@ -291,12 +378,14 @@ mod tests {
     fn negative_overflow() {
         assert_eq!(
             lex("-584654654654654654694")
-                .find_map(|r| match r {
-                    Ok(_) => None,
-                    Err(e) => Some(e),
-                })
-                .unwrap(),
-            LexError::ParseIntError(IntErrorKind::NegOverflow)
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![Token::Literal(LiteralToken::Num {
+                negative: true,
+                kind: NumKind::Decimal,
+                body: "584654654654654654694"
+            })]
         )
     }
 
@@ -304,36 +393,58 @@ mod tests {
     fn positive_overflow() {
         assert_eq!(
             lex("584654654654654654694")
-                .find_map(|r| match r {
-                    Ok(_) => None,
-                    Err(e) => Some(e),
-                })
-                .unwrap(),
-            LexError::ParseIntError(IntErrorKind::PosOverflow)
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![Token::Literal(LiteralToken::Num {
+                negative: false,
+                kind: NumKind::Decimal,
+                body: "584654654654654654694"
+            })]
         )
     }
 
     #[test]
     fn binary() {
         assert_eq!(
-            lex("-0b0100").map(Result::unwrap).collect::<Vec<_>>(),
-            vec![Token::Literal(LiteralToken::Int(-4))]
+            lex("-0b0100").unwrap().into_iter().collect::<Vec<_>>(),
+            vec![Token::Literal(LiteralToken::Num {
+                negative: true,
+                kind: NumKind::Binary,
+                body: "0100"
+            })]
         )
     }
 
     #[test]
     fn ocatal() {
         assert_eq!(
-            lex("-0o0700").map(Result::unwrap).collect::<Vec<_>>(),
-            vec![Token::Literal(LiteralToken::Int(-448))]
+            lex("-0o0700").unwrap().into_iter().collect::<Vec<_>>(),
+            vec![Token::Literal(LiteralToken::Num {
+                negative: true,
+                kind: NumKind::Octal,
+                body: "0700"
+            })]
         )
     }
 
     #[test]
     fn hex() {
         assert_eq!(
-            lex("-0x0AbE").map(Result::unwrap).collect::<Vec<_>>(),
-            vec![Token::Literal(LiteralToken::Int(-2750))]
+            lex("-0x0AbE").unwrap().into_iter().collect::<Vec<_>>(),
+            vec![Token::Literal(LiteralToken::Num {
+                negative: true,
+                kind: NumKind::Hex,
+                body: "0AbE"
+            })]
+        )
+    }
+
+    #[test]
+    fn string_simple() {
+        assert_eq!(
+            lex("\"a string\"").unwrap().into_iter().collect::<Vec<_>>(),
+            vec![Token::Literal(LiteralToken::Str("a string"))]
         )
     }
 }
