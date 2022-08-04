@@ -271,7 +271,7 @@ fn is_ident_start(c: char) -> bool {
 
 #[inline(always)]
 fn is_ident(c: char) -> bool {
-    is_ident_start(c) || is_decimal_digit(c)
+    is_ident_start(c) || is_decimal_digit(c) || c == '.'
 }
 
 #[inline(always)]
@@ -440,5 +440,10 @@ mod tests {
             lex("\"a string\"").unwrap(),
             vec![Token::Literal(LiteralToken::Str("a string"))]
         )
+    }
+
+    #[test]
+    fn dot_ident() {
+        assert_eq!(lex("add.d").unwrap(), vec![Token::Ident("add.d")])
     }
 }
