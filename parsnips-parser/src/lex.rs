@@ -345,7 +345,7 @@ mod tests {
     #[test]
     fn comment() {
         assert_eq!(
-            lex("# a comment").unwrap().into_iter().collect::<Vec<_>>(),
+            lex("# a comment").unwrap(),
             vec![Token::Comment(" a comment")]
         )
     }
@@ -353,7 +353,7 @@ mod tests {
     #[test]
     fn int() {
         assert_eq!(
-            lex("-5894").unwrap().into_iter().collect::<Vec<_>>(),
+            lex("-5894").unwrap(),
             vec![Token::Literal(LiteralToken::Num {
                 negative: true,
                 kind: NumKind::Decimal,
@@ -365,7 +365,7 @@ mod tests {
     #[test]
     fn uint() {
         assert_eq!(
-            lex("5894").unwrap().into_iter().collect::<Vec<_>>(),
+            lex("5894").unwrap(),
             vec![Token::Literal(LiteralToken::Num {
                 negative: false,
                 kind: NumKind::Decimal,
@@ -377,10 +377,7 @@ mod tests {
     #[test]
     fn negative_overflow() {
         assert_eq!(
-            lex("-584654654654654654694")
-                .unwrap()
-                .into_iter()
-                .collect::<Vec<_>>(),
+            lex("-584654654654654654694").unwrap(),
             vec![Token::Literal(LiteralToken::Num {
                 negative: true,
                 kind: NumKind::Decimal,
@@ -392,10 +389,7 @@ mod tests {
     #[test]
     fn positive_overflow() {
         assert_eq!(
-            lex("584654654654654654694")
-                .unwrap()
-                .into_iter()
-                .collect::<Vec<_>>(),
+            lex("584654654654654654694").unwrap(),
             vec![Token::Literal(LiteralToken::Num {
                 negative: false,
                 kind: NumKind::Decimal,
@@ -407,7 +401,7 @@ mod tests {
     #[test]
     fn binary() {
         assert_eq!(
-            lex("-0b0100").unwrap().into_iter().collect::<Vec<_>>(),
+            lex("-0b0100").unwrap(),
             vec![Token::Literal(LiteralToken::Num {
                 negative: true,
                 kind: NumKind::Binary,
@@ -419,7 +413,7 @@ mod tests {
     #[test]
     fn ocatal() {
         assert_eq!(
-            lex("-0o0700").unwrap().into_iter().collect::<Vec<_>>(),
+            lex("-0o0700").unwrap(),
             vec![Token::Literal(LiteralToken::Num {
                 negative: true,
                 kind: NumKind::Octal,
@@ -431,7 +425,7 @@ mod tests {
     #[test]
     fn hex() {
         assert_eq!(
-            lex("-0x0AbE").unwrap().into_iter().collect::<Vec<_>>(),
+            lex("-0x0AbE").unwrap(),
             vec![Token::Literal(LiteralToken::Num {
                 negative: true,
                 kind: NumKind::Hex,
@@ -443,7 +437,7 @@ mod tests {
     #[test]
     fn string_simple() {
         assert_eq!(
-            lex("\"a string\"").unwrap().into_iter().collect::<Vec<_>>(),
+            lex("\"a string\"").unwrap(),
             vec![Token::Literal(LiteralToken::Str("a string"))]
         )
     }
