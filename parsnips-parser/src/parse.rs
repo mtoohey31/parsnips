@@ -43,6 +43,7 @@ pub struct Instruction<'a> {
 #[derive(PartialEq, Eq)]
 pub enum Argument<'a> {
     Register(&'a str),
+    OffsetRegister { offset: &'a str, register: &'a str },
     Literal(&'a str),
     Label(&'a str),
 }
@@ -51,14 +52,14 @@ pub enum Argument<'a> {
 #[derive(PartialEq, Eq)]
 pub struct Data<'a> {
     pub label: &'a str,
-    pub value: DataDeclaration,
+    pub value: DataDeclaration<'a>,
 }
 
 #[cfg_attr(test, derive(Debug))]
 #[derive(PartialEq, Eq)]
-pub struct DataDeclaration {
+pub struct DataDeclaration<'a> {
     pub kind: DataKind,
-    pub value: DataValue,
+    pub value: DataValue<'a>,
 }
 
 #[cfg_attr(test, derive(Debug))]
@@ -67,6 +68,7 @@ pub enum DataKind {
     Word,
     HalfWord,
     Byte,
+    Asciiz,
 }
 
 // TODO: figure out how to return the parse error here, things are kinda funky
@@ -80,6 +82,7 @@ impl TryFrom<&str> for DataKind {
             "word" => Ok(Self::Word),
             "hword" => Ok(Self::HalfWord),
             "byte" => Ok(Self::Byte),
+            "asciiz" => Ok(Self::Asciiz),
             _ => Err(()),
         }
     }
@@ -88,8 +91,8 @@ impl TryFrom<&str> for DataKind {
 // TODO: populate the values of this struct
 #[cfg_attr(test, derive(Debug))]
 #[derive(PartialEq, Eq)]
-pub enum DataValue {
-    String,
+pub enum DataValue<'a> {
+    String(&'a str),
     Int,
     Uint,
     // TODO: make value something other than usize
@@ -171,23 +174,6 @@ macro_rules! skip_at_least_one_whitespace {
     }};
 }
 
-macro_rules! get_arg {
-    ($ti:expr) => {{
-        match $ti.next().ok_or(ParseError::UnexpectedEOF)? {
-            Token::Dollar => {
-                let n = $ti.next().ok_or(ParseError::UnexpectedEOF)?;
-                if let Token::Ident(s) = n {
-                    Ok(Argument::Register(s))
-                } else {
-                    Err(ParseError::UnexpectedToken(n))
-                }
-            }
-            Token::Literal(LiteralToken::Num { body, .. }) => Ok(Argument::Literal(body)),
-            n => Err(ParseError::UnexpectedToken(n)),
-        }
-    }};
-}
-
 pub fn parse(input: &str) -> Result<Ast, ParseError> {
     let mut a = Ast::new();
     let mut cs: Option<Section> = None;
@@ -220,6 +206,8 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                     Token::Ident(d) => return Err(ParseError::UnknownDirective(d)),
                     _ => return Err(ParseError::UnexpectedToken(tn)),
                 }
+                skip_whitespace!(ti);
+                expect!(ti, Token::Newline)?;
             }
             Token::Comma => todo!(),
             Token::Colon => todo!(),
@@ -284,7 +272,11 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                             Some(Token::Comment(_)) => panic!(),
                                         }
                                     }
-                                    Token::Literal(_) => todo!(),
+                                    Token::Literal(l) => match l {
+                                        LiteralToken::Num { .. } => todo!(),
+                                        LiteralToken::Char(_) => todo!(),
+                                        LiteralToken::Str(s) => DataValue::String(s),
+                                    },
 
                                     Token::Comment(_) => panic!(),
                                 },
@@ -316,6 +308,9 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                 Some(Token::Dollar) => {
                                     inst.arguments.push(Argument::Register(expect_ident!(ti)?))
                                 }
+                                Some(Token::Ident(i)) => {
+                                    inst.arguments.push(Argument::Label(i));
+                                }
                                 Some(Token::Literal(LiteralToken::Num {
                                     negative: _,
                                     kind: _,
@@ -336,11 +331,26 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                     Some(Token::Dollar) => {
                                         inst.arguments.push(Argument::Register(expect_ident!(ti)?));
                                     }
+                                    Some(Token::Ident(i)) => {
+                                        inst.arguments.push(Argument::Label(i));
+                                    }
                                     Some(Token::Literal(LiteralToken::Num {
                                         negative: _,
                                         kind: _,
                                         body: b,
-                                    })) => inst.arguments.push(Argument::Literal(b)),
+                                    })) => {
+                                        if Some(&Token::OpenParen) == ti.peek() {
+                                            ti.next().unwrap();
+                                            expect!(ti, Token::Dollar)?;
+                                            inst.arguments.push(Argument::OffsetRegister {
+                                                offset: b,
+                                                register: expect_ident!(ti)?,
+                                            });
+                                            expect!(ti, Token::CloseParen)?;
+                                        } else {
+                                            inst.arguments.push(Argument::Literal(b))
+                                        }
+                                    }
                                     Some(u) => return Err(ParseError::UnexpectedToken(u)),
                                     None => return Err(ParseError::UnexpectedEOF),
                                 }
@@ -398,6 +408,280 @@ mod tests {
                         ],
                     })
                 ])]
+            }
+        );
+    }
+
+    #[test]
+    fn fib() {
+        // TODO: update this to include the contents of literals and other
+        // missing data
+        assert_eq!(
+            parse(include_str!("../tests/Fibonacci.asm")).unwrap(),
+            Ast {
+                sections: vec![
+                    Section::Data(vec![
+                        Data {
+                            label: "fibs",
+                            value: DataDeclaration {
+                                kind: DataKind::Word,
+                                value: DataValue::Array { value: 0, size: 0 }
+                            }
+                        },
+                        Data {
+                            label: "size",
+                            value: DataDeclaration {
+                                kind: DataKind::Word,
+                                value: DataValue::Int,
+                            }
+                        }
+                    ]),
+                    Section::Text(vec![
+                        Entry::Instruction(Instruction {
+                            name: "la",
+                            arguments: vec![Argument::Register("t0"), Argument::Label("fibs")]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "la",
+                            arguments: vec![Argument::Register("t5"), Argument::Label("size")]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "lw",
+                            arguments: vec![
+                                Argument::Register("t5"),
+                                Argument::OffsetRegister {
+                                    offset: "0",
+                                    register: "t5"
+                                }
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "li",
+                            arguments: vec![Argument::Register("t2"), Argument::Literal("1")]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "add.d",
+                            arguments: vec![
+                                Argument::Register("f0"),
+                                Argument::Register("f2"),
+                                Argument::Register("f4")
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "sw",
+                            arguments: vec![
+                                Argument::Register("t2"),
+                                Argument::OffsetRegister {
+                                    offset: "0",
+                                    register: "t0"
+                                }
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "sw",
+                            arguments: vec![
+                                Argument::Register("t2"),
+                                Argument::OffsetRegister {
+                                    offset: "4",
+                                    register: "t0"
+                                }
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "addi",
+                            arguments: vec![
+                                Argument::Register("t1"),
+                                Argument::Register("t5"),
+                                Argument::Literal("2")
+                            ]
+                        }),
+                        Entry::Label("loop"),
+                        Entry::Instruction(Instruction {
+                            name: "lw",
+                            arguments: vec![
+                                Argument::Register("t3"),
+                                Argument::OffsetRegister {
+                                    offset: "0",
+                                    register: "t0"
+                                }
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "lw",
+                            arguments: vec![
+                                Argument::Register("t4"),
+                                Argument::OffsetRegister {
+                                    offset: "4",
+                                    register: "t0"
+                                }
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "add",
+                            arguments: vec![
+                                Argument::Register("t2"),
+                                Argument::Register("t3"),
+                                Argument::Register("t4")
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "sw",
+                            arguments: vec![
+                                Argument::Register("t2"),
+                                Argument::OffsetRegister {
+                                    offset: "8",
+                                    register: "t0"
+                                }
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "addi",
+                            arguments: vec![
+                                Argument::Register("t0"),
+                                Argument::Register("t0"),
+                                Argument::Literal("4")
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "addi",
+                            arguments: vec![
+                                Argument::Register("t1"),
+                                Argument::Register("t1"),
+                                Argument::Literal("1")
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "bgtz",
+                            arguments: vec![Argument::Register("t1"), Argument::Label("loop")]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "la",
+                            arguments: vec![Argument::Register("a0"), Argument::Label("fibs")]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "add",
+                            arguments: vec![
+                                Argument::Register("a1"),
+                                Argument::Register("zero"),
+                                Argument::Register("t5")
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "jal",
+                            arguments: vec![Argument::Label("print")]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "li",
+                            arguments: vec![Argument::Register("v0"), Argument::Literal("10")]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "syscall",
+                            arguments: vec![]
+                        })
+                    ]),
+                    Section::Data(vec![
+                        Data {
+                            label: "space",
+                            value: DataDeclaration {
+                                kind: DataKind::Asciiz,
+                                value: DataValue::String(" ")
+                            }
+                        },
+                        Data {
+                            label: "head",
+                            value: DataDeclaration {
+                                kind: DataKind::Asciiz,
+                                value: DataValue::String("The Fibonacci numbers are:\\n")
+                            }
+                        }
+                    ]),
+                    Section::Text(vec![
+                        Entry::Label("print"),
+                        Entry::Instruction(Instruction {
+                            name: "add",
+                            arguments: vec![
+                                Argument::Register("t0"),
+                                Argument::Register("zero"),
+                                Argument::Register("a0")
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "add",
+                            arguments: vec![
+                                Argument::Register("t1"),
+                                Argument::Register("zero"),
+                                Argument::Register("a1")
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "la",
+                            arguments: vec![Argument::Register("a0"), Argument::Label("head")]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "li",
+                            arguments: vec![Argument::Register("v0"), Argument::Literal("4")]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "syscall",
+                            arguments: vec![]
+                        }),
+                        Entry::Label("out"),
+                        Entry::Instruction(Instruction {
+                            name: "lw",
+                            arguments: vec![
+                                Argument::Register("a0"),
+                                Argument::OffsetRegister {
+                                    offset: "0",
+                                    register: "t0"
+                                }
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "li",
+                            arguments: vec![Argument::Register("v0"), Argument::Literal("1")]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "syscall",
+                            arguments: vec![]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "la",
+                            arguments: vec![Argument::Register("a0"), Argument::Label("space")]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "li",
+                            arguments: vec![Argument::Register("v0"), Argument::Literal("4")]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "syscall",
+                            arguments: vec![]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "addi",
+                            arguments: vec![
+                                Argument::Register("t0"),
+                                Argument::Register("t0"),
+                                Argument::Literal("4")
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "addi",
+                            arguments: vec![
+                                Argument::Register("t1"),
+                                Argument::Register("t1"),
+                                Argument::Literal("1")
+                            ]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "bgtz",
+                            arguments: vec![Argument::Register("t1"), Argument::Label("out")]
+                        }),
+                        Entry::Instruction(Instruction {
+                            name: "jr",
+                            arguments: vec![Argument::Register("ra")]
+                        })
+                    ])
+                ]
             }
         );
     }
