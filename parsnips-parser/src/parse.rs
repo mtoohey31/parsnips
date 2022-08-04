@@ -251,14 +251,11 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                                 skip_whitespace!(ti);
                                                 match expect_literal!(ti)? {
                                                     LiteralToken::Num { .. } => {
+                                                        // TODO: translate and populate this
                                                         DataValue::Array { value: 0, size: 0 }
                                                     }
-                                                    // TODO: translate and populate this
-                                                    u => {
-                                                        return Err(ParseError::UnexpectedToken(
-                                                            Token::Literal(u),
-                                                        ))
-                                                    }
+                                                    LiteralToken::Char(_) => todo!(),
+                                                    LiteralToken::Str(_) => todo!(),
                                                 }
                                             }
                                             Some(Token::OpenParen) => todo!(),
@@ -316,7 +313,15 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                     kind: _,
                                     body: b,
                                 })) => inst.arguments.push(Argument::Literal(b)),
-                                Some(u) => return Err(ParseError::UnexpectedToken(u)),
+                                Some(Token::Dot) => todo!(),
+                                Some(Token::Comma) => todo!(),
+                                Some(Token::Colon) => todo!(),
+                                Some(Token::OpenParen) => todo!(),
+                                Some(Token::CloseParen) => todo!(),
+                                Some(Token::Whitespace) => todo!(),
+                                Some(Token::Literal(_)) => todo!(),
+
+                                Some(Token::Comment(_)) => panic!(),
                             }
 
                             loop {
@@ -351,8 +356,17 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                             inst.arguments.push(Argument::Literal(b))
                                         }
                                     }
-                                    Some(u) => return Err(ParseError::UnexpectedToken(u)),
+                                    Some(Token::Dot) => todo!(),
+                                    Some(Token::Comma) => todo!(),
+                                    Some(Token::Colon) => todo!(),
+                                    Some(Token::OpenParen) => todo!(),
+                                    Some(Token::CloseParen) => todo!(),
+                                    Some(Token::Whitespace) => todo!(),
+                                    Some(Token::Newline) => todo!(),
+                                    Some(Token::Literal(_)) => todo!(),
                                     None => return Err(ParseError::UnexpectedEOF),
+
+                                    Some(Token::Comment(_)) => panic!(),
                                 }
                             }
 
