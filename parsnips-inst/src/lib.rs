@@ -1,7 +1,11 @@
 #![no_std]
 
-pub mod function;
-pub mod opcode;
+use num_enum::TryFromPrimitiveError;
+
+mod function;
+mod opcode;
+pub use function::Funct;
+pub use opcode::Op;
 
 const MASK5: u32 = (1 << 5) - 1;
 const MASK6: u32 = (1 << 6) - 1;
@@ -9,29 +13,27 @@ const MASK16: u32 = (1 << 16) - 1;
 const MASK26: u32 = (1 << 26) - 1;
 
 // source: https://student.cs.uwaterloo.ca/~isg/res/mips/opcodes
-// TODO: figure out how to make this less boilerplatey, maybe with a proceedural
-// macro?
 
 pub type Inst = u32;
 pub trait InstFields {
-    fn op(&self) -> u8;
+    fn op(&self) -> Result<Op, TryFromPrimitiveError<Op>>;
 }
 impl InstFields for Inst {
     #[inline(always)]
-    fn op(&self) -> u8 {
-        (self >> 26) as u8
+    fn op(&self) -> Result<Op, TryFromPrimitiveError<Op>> {
+        Op::try_from((self >> 26) as u8)
     }
 }
 
 // register encodings
 
 pub trait RegFields {
-    fn funct(&self) -> u8;
+    fn funct(&self) -> Result<Funct, TryFromPrimitiveError<Funct>>;
 }
 impl RegFields for Inst {
     #[inline(always)]
-    fn funct(&self) -> u8 {
-        (self & MASK6) as u8
+    fn funct(&self) -> Result<Funct, TryFromPrimitiveError<Funct>> {
+        Funct::try_from((self & MASK6) as u8)
     }
 }
 
