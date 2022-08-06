@@ -8,3 +8,10 @@ readme = "../README.md"
 homepage = "https://github.com/mtoohey31/parsnips"
 repository = "https://github.com/mtoohey31/parsnips"
 license = "MIT OR Apache-2.0"
+
+[dependencies]
+# needed for converting between opcode/function enums and u8's
+num_enum = { version = "0.5.7", default-features = false }
+# needed for converting between opcode/function enums and strings
+strum = { version = "0.24", default-features = false }
+strum_macros = { version = "0.24", default-features = false }
