@@ -312,12 +312,12 @@ impl Emulator {
             return Err(ERR_MISALIGNED_PC![self.pc]);
         };
         self.pc += 4;
-        match inst.op().or_else(|e| Err(ERR_OP![e.number]))? {
+        match unsafe { inst.op() } {
             Op::REG => {
                 use inst::Funct;
                 use inst::RegFields;
 
-                match inst.funct().or_else(|e| Err(ERR_FUNCT![e.number]))? {
+                match unsafe { inst.funct() } {
                     // NOTE: the difference between ADD and ADDU is that ADD
                     // generates a trap when an overflow occurs, so it is
                     // correct to use the unsafe u32::unchecked_add for ADDU
@@ -479,6 +479,7 @@ impl Emulator {
                             0
                         };
                     }
+                    unknown => return Err(ERR_FUNCT![<Funct as Into<u8>>::into(unknown)]),
                 }
             }
             Op::ADDI => {
@@ -701,6 +702,7 @@ impl Emulator {
                     return Err(ERR_OP![<Op as Into<u8>>::into(Op::SYSCALL)]);
                 }
             },
+            unknown => return Err(ERR_OP![<Op as Into<u8>>::into(unknown)]),
         };
 
         Ok(())

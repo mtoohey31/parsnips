@@ -1,7 +1,5 @@
 #![no_std]
 
-use num_enum::TryFromPrimitiveError;
-
 mod function;
 mod opcode;
 pub use function::Funct;
@@ -16,24 +14,24 @@ const MASK26: u32 = (1 << 26) - 1;
 
 pub type Inst = u32;
 pub trait InstFields {
-    fn op(&self) -> Result<Op, TryFromPrimitiveError<Op>>;
+    unsafe fn op(&self) -> Op;
 }
 impl InstFields for Inst {
     #[inline(always)]
-    fn op(&self) -> Result<Op, TryFromPrimitiveError<Op>> {
-        Op::try_from((self >> 26) as u8)
+    unsafe fn op(&self) -> Op {
+        Op::from_unchecked((self >> 26) as u8)
     }
 }
 
 // register encodings
 
 pub trait RegFields {
-    fn funct(&self) -> Result<Funct, TryFromPrimitiveError<Funct>>;
+    unsafe fn funct(&self) -> Funct;
 }
 impl RegFields for Inst {
     #[inline(always)]
-    fn funct(&self) -> Result<Funct, TryFromPrimitiveError<Funct>> {
-        Funct::try_from((self & MASK6) as u8)
+    unsafe fn funct(&self) -> Funct {
+        Funct::from_unchecked((self & MASK6) as u8)
     }
 }
 
