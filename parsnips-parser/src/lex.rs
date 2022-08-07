@@ -286,6 +286,7 @@ fn handle_escape((pos, c): (usize, char)) -> Result<char, LexError> {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use alloc::vec::Vec;
 
     use super::*;
