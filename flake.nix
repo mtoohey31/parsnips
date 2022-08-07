@@ -51,6 +51,7 @@
               binaryen
               evcxr
               grcov
+              cargo-expand
               cargo-watch
               rust-analyzer
             ] ++ (with nodePackages; [
