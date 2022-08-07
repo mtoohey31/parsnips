@@ -1,8 +1,8 @@
-use num_enum::{IntoPrimitive, TryFromPrimitive};
+use num_enum::{IntoPrimitive, UnsafeFromPrimitive};
 use strum_macros::EnumString;
 
 #[cfg_attr(test, derive(Debug))]
-#[derive(Eq, PartialEq, TryFromPrimitive, IntoPrimitive, EnumString)]
+#[derive(Eq, PartialEq, UnsafeFromPrimitive, IntoPrimitive, EnumString)]
 #[strum(serialize_all = "lowercase")]
 #[repr(u8)]
 pub enum Funct {
@@ -32,4 +32,8 @@ pub enum Funct {
     NOR = 0b100111,
     SLT = 0b101010,
     SLTU = 0b101001,
+    // used to force the compiler to handle other cases so unsafe conversions that may have
+    // incorrect internals can be matched against
+    #[doc(hidden)]
+    __Nonexhaustive = 0b111111,
 }
