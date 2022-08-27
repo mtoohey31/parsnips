@@ -1,8 +1,8 @@
 #![no_std]
 
-mod function;
-mod opcode;
-pub use function::Funct;
+pub mod funct;
+pub mod opcode;
+pub use funct::Funct;
 pub use opcode::Op;
 
 const MASK5: u32 = (1 << 5) - 1;
@@ -14,24 +14,24 @@ const MASK26: u32 = (1 << 26) - 1;
 
 pub type Inst = u32;
 pub trait InstFields {
-    unsafe fn op(&self) -> Op;
+    fn op(&self) -> u8;
 }
 impl InstFields for Inst {
     #[inline(always)]
-    unsafe fn op(&self) -> Op {
-        Op::from_unchecked((self >> 26) as u8)
+    fn op(&self) -> u8 {
+        (self >> 26) as u8
     }
 }
 
 // register encodings
 
 pub trait RegFields {
-    unsafe fn funct(&self) -> Funct;
+    fn funct(&self) -> u8;
 }
 impl RegFields for Inst {
     #[inline(always)]
-    unsafe fn funct(&self) -> Funct {
-        Funct::from_unchecked((self & MASK6) as u8)
+    fn funct(&self) -> u8 {
+        (self & MASK6) as u8
     }
 }
 
