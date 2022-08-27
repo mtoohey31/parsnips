@@ -749,15 +749,15 @@ mod tests {
     #[wasm_bindgen_test]
     fn add_neg() {
         let mut prog = le_byte_arr![
-            0b001000_00000_00011_0000000000000000 | (-1 as i16 as u16 as u32),
-            0b001000_00000_00010_0000000000000000 | (-1 as i16 as u16 as u32),
+            0b001000_00000_00011_0000000000000000 | (-1_i16 as u16 as u32),
+            0b001000_00000_00010_0000000000000000 | (-1_i16 as u16 as u32),
             0b000000_00010_00011_00100_00101_100000,
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
         emu.step(&mut prog, None).unwrap();
         emu.step(&mut prog, None).unwrap();
-        assert_eq!(emu.regs[4], -2 as i32 as u32);
+        assert_eq!(emu.regs[4], -2_i32 as u32);
     }
     #[test]
     #[wasm_bindgen_test]
@@ -899,7 +899,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn mult_neg() {
         let mut prog = le_byte_arr![
-            0b001000_00000_00001_0000000000000000 | (-11 as i16 as u16 as u32),
+            0b001000_00000_00001_0000000000000000 | (-11_i16 as u16 as u32),
             0b001000_00000_00010_0000000000000000 | 4,
             0b000000_00001_00010_0000000000_011000,
         ];
@@ -907,7 +907,7 @@ mod tests {
         emu.step(&mut prog, None).unwrap();
         emu.step(&mut prog, None).unwrap();
         emu.step(&mut prog, None).unwrap();
-        assert_eq!(emu.lo, -44 as i32 as u32);
+        assert_eq!(emu.lo, -44_i32 as u32);
         assert_eq!(emu.hi, 0);
     }
     #[test]
@@ -915,8 +915,8 @@ mod tests {
     fn mult_big() {
         // TODO: make these bigger when shifts are added
         let mut prog = le_byte_arr![
-            0b001000_00000_00001_0000000000000000 | (i16::MAX as u16 as u32),
-            0b001000_00000_00010_0000000000000000 | (i16::MAX as u16 as u32),
+            0b001000_00000_00001_0000000000000000 | (i16::MAX as u32),
+            0b001000_00000_00010_0000000000000000 | (i16::MAX as u32),
             0b000000_00001_00010_0000000000_011000,
         ];
         let mut emu = Emulator::new();
@@ -947,8 +947,8 @@ mod tests {
     #[wasm_bindgen_test]
     fn multu_big() {
         let mut prog = le_byte_arr![
-            0b001000_00000_00001_0000000000000000 | (-1 as i16 as u16 as u32),
-            0b001000_00000_00010_0000000000000000 | (-1 as i16 as u16 as u32),
+            0b001000_00000_00001_0000000000000000 | (-1_i16 as u16 as u32),
+            0b001000_00000_00010_0000000000000000 | (-1_i16 as u16 as u32),
             0b000000_00001_00010_0000000000_011001,
         ];
         let mut emu = Emulator::new();
@@ -1136,20 +1136,20 @@ mod tests {
     #[wasm_bindgen_test]
     fn sra() {
         let mut prog = le_byte_arr![
-            0b001000_00000_00001_0000000000000000 | (((-2 as i16) << 4) as u16 as u32),
+            0b001000_00000_00001_0000000000000000 | ((-2_i16 << 4) as u16 as u32),
             0b000000_00000_00001_00001_00011_000011,
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
         emu.step(&mut prog, None).unwrap();
-        assert_eq!(emu.regs[1], ((-2 as i32) << 1) as u32);
+        assert_eq!(emu.regs[1], (-2_i32 << 1) as u32);
     }
 
     #[test]
     #[wasm_bindgen_test]
     fn srav() {
         let mut prog = le_byte_arr![
-            0b001000_00000_00001_0000000000000000 | (((-2 as i16) << 4) as u16 as u32),
+            0b001000_00000_00001_0000000000000000 | ((-2_i16 << 4) as u16 as u32),
             0b001000_00000_00010_0000000000000000 | 3,
             0b000000_00010_00001_00001_00000_000111,
         ];
@@ -1157,7 +1157,7 @@ mod tests {
         emu.step(&mut prog, None).unwrap();
         emu.step(&mut prog, None).unwrap();
         emu.step(&mut prog, None).unwrap();
-        assert_eq!(emu.regs[1], ((-2 as i32) << 1) as u32);
+        assert_eq!(emu.regs[1], (-2_i32 << 1) as u32);
     }
 
     #[test]
@@ -1176,13 +1176,13 @@ mod tests {
     #[wasm_bindgen_test]
     fn srl_not_extended() {
         let mut prog = le_byte_arr![
-            0b001000_00000_00001_0000000000000000 | (((-2 as i16) << 4) as u16 as u32),
+            0b001000_00000_00001_0000000000000000 | ((-2_i16 << 4) as u16 as u32),
             0b000000_00000_00001_00001_01111_000010,
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
         emu.step(&mut prog, None).unwrap();
-        assert_eq!(emu.regs[1], ((-2 as i32) << 4) as u32 >> 15);
+        assert_eq!(emu.regs[1], (-2_i32 << 4) as u32 >> 15);
     }
 
     #[test]
@@ -1203,7 +1203,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn srlv_not_extended() {
         let mut prog = le_byte_arr![
-            0b001000_00000_00001_0000000000000000 | (((-2 as i16) << 4) as u16 as u32),
+            0b001000_00000_00001_0000000000000000 | ((-2_i16 << 4) as u16 as u32),
             0b001000_00000_00010_0000000000000000 | 15,
             0b000000_00010_00001_00001_00000_000110,
         ];
@@ -1211,7 +1211,7 @@ mod tests {
         emu.step(&mut prog, None).unwrap();
         emu.step(&mut prog, None).unwrap();
         emu.step(&mut prog, None).unwrap();
-        assert_eq!(emu.regs[1], ((-2 as i32) << 4) as u32 >> 15);
+        assert_eq!(emu.regs[1], (-2_i32 << 4) as u32 >> 15);
     }
 
     #[test]
@@ -1233,8 +1233,8 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sub_neg() {
-        let minuend: i16 = -61;
-        let subtrahend: i16 = -159;
+        let minuend = -61_i16;
+        let subtrahend = -159_i16;
         let mut prog = le_byte_arr![
             0b001000_00000_00001_0000000000000000 | minuend as u16 as u32,
             0b001000_00000_00010_0000000000000000 | subtrahend as u16 as u32,
@@ -1266,8 +1266,8 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn subu_neg() {
-        let minuend: i16 = -61;
-        let subtrahend: i16 = -159;
+        let minuend = -61_i16;
+        let subtrahend = -159_i16;
         let mut prog = le_byte_arr![
             0b001000_00000_00001_0000000000000000 | minuend as u16 as u32,
             0b001000_00000_00010_0000000000000000 | subtrahend as u16 as u32,
@@ -1294,11 +1294,10 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn addi_neg() {
-        let mut prog =
-            le_byte_arr![0b001000_00000_00001_0000000000000000 | (-1 as i16 as u16 as u32)];
+        let mut prog = le_byte_arr![0b001000_00000_00001_0000000000000000 | (-1_i16 as u16 as u32)];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
-        assert_eq!(emu.regs[1], -1 as i16 as i32 as u32);
+        assert_eq!(emu.regs[1], -1_i16 as i32 as u32);
     }
     #[test]
     #[wasm_bindgen_test]
@@ -1532,7 +1531,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn slt_neg() {
         let mut prog = le_byte_arr![
-            0b001000_00000_00001_0000000000000000 | -1 as i16 as u16 as u32,
+            0b001000_00000_00001_0000000000000000 | -1_i16 as u16 as u32,
             0b001000_00000_00010_0000000000000000 | 1,
             0b000000_00001_00010_00011_00000_101010,
         ];
@@ -1589,7 +1588,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn sltu_neg() {
         let mut prog = le_byte_arr![
-            0b001000_00000_00001_0000000000000000 | -1 as i16 as u16 as u32,
+            0b001000_00000_00001_0000000000000000 | -1_i16 as u16 as u32,
             0b001000_00000_00010_0000000000000000 | 1,
             0b000000_00001_00010_00011_00000_101001,
         ];
@@ -1640,7 +1639,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn slti_neg() {
         let mut prog = le_byte_arr![
-            0b001000_00000_00001_0000000000000000 | -1 as i16 as u16 as u32,
+            0b001000_00000_00001_0000000000000000 | -1_i16 as u16 as u32,
             0b001010_00001_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
@@ -1689,7 +1688,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn sltiu_neg() {
         let mut prog = le_byte_arr![
-            0b001000_00000_00001_0000000000000000 | -1 as i16 as u16 as u32,
+            0b001000_00000_00001_0000000000000000 | -1_i16 as u16 as u32,
             0b001011_00001_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
@@ -1764,7 +1763,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn blez_minus_one() {
         let mut prog = le_byte_arr![
-            0b001000_00000_00001_0000000000000000 | (-1 as i16 as u16 as u32),
+            0b001000_00000_00001_0000000000000000 | (-1_i16 as u16 as u32),
             0b000110_00001_00000_0000000000000000 | 12,
         ];
         let mut emu = Emulator::new();
@@ -1810,11 +1809,11 @@ mod tests {
     fn lb_neg() {
         let mut prog = le_byte_arr![
             0b100000_00000_00001_0000000000000101,
-            (-7 as i8 as u8 as u32) << 8,
+            (-7_i8 as u8 as u32) << 8,
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
-        assert_eq!(emu.regs[1], -7 as i32 as u32);
+        assert_eq!(emu.regs[1], -7_i32 as u32);
     }
 
     #[test]
@@ -1833,11 +1832,11 @@ mod tests {
     fn lbu_neg() {
         let mut prog = le_byte_arr![
             0b100100_00000_00001_0000000000000101,
-            (-7 as i8 as u8 as u32) << 8,
+            (-7_i8 as u8 as u32) << 8,
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
-        assert_eq!(emu.regs[1], -7 as i8 as u8 as u32);
+        assert_eq!(emu.regs[1], -7_i8 as u8 as u32);
     }
 
     #[test]
@@ -1867,13 +1866,10 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lh_neg() {
-        let mut prog = le_byte_arr![
-            0b100001_00000_00001_0000000000000100,
-            -7 as i16 as u16 as u32,
-        ];
+        let mut prog = le_byte_arr![0b100001_00000_00001_0000000000000100, -7_i16 as u16 as u32,];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
-        assert_eq!(emu.regs[1], -7 as i32 as u32);
+        assert_eq!(emu.regs[1], -7_i32 as u32);
     }
     #[test]
     #[wasm_bindgen_test]
@@ -1912,13 +1908,10 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lhu_neg() {
-        let mut prog = le_byte_arr![
-            0b100101_00000_00001_0000000000000100,
-            -7 as i16 as u16 as u32,
-        ];
+        let mut prog = le_byte_arr![0b100101_00000_00001_0000000000000100, -7_i16 as u16 as u32,];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
-        assert_eq!(emu.regs[1], -7 as i16 as u16 as u32);
+        assert_eq!(emu.regs[1], -7_i16 as u16 as u32);
     }
     #[test]
     #[wasm_bindgen_test]
@@ -1992,10 +1985,10 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lw_neg() {
-        let mut prog = le_byte_arr![0b100011_00000_00001_0000000000000100, -7 as i32 as u32,];
+        let mut prog = le_byte_arr![0b100011_00000_00001_0000000000000100, -7_i32 as u32,];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
-        assert_eq!(emu.regs[1], -7 as i32 as u32);
+        assert_eq!(emu.regs[1], -7_i32 as u32);
     }
     #[test]
     #[wasm_bindgen_test]
@@ -2024,13 +2017,13 @@ mod tests {
     #[wasm_bindgen_test]
     fn sw() {
         let mut prog = le_byte_arr![
-            0b001000_00000_00001_0000000000000000 | -9185 as i16 as u16 as u32,
+            0b001000_00000_00001_0000000000000000 | -9185_i16 as u16 as u32,
             0b101011_00000_00001_0000000000000100,
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
         emu.step(&mut prog, None).unwrap();
-        assert_eq!(unsafe { prog.align_to::<u32>() }.1[1], -9185 as i32 as u32);
+        assert_eq!(unsafe { prog.align_to::<u32>() }.1[1], -9185_i32 as u32);
     }
     #[test]
     #[wasm_bindgen_test]
