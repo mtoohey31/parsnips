@@ -254,7 +254,7 @@ fn panic(_: &PanicInfo) -> ! {
     loop {}
 }
 
-use inst::{Inst, Op};
+use inst::Inst;
 use parsnips_inst as inst;
 
 const MASK8: u32 = (1 << 8) - 1;
@@ -299,6 +299,7 @@ impl Emulator {
         memory: &mut [u8],
         syscall_handler: Option<SyscallHandler>,
     ) -> Result<(), ErrorType> {
+        use inst::opcode::*;
         use inst::InstFields;
 
         if self.pc >= memory.len() as u32 {
@@ -316,18 +317,18 @@ impl Emulator {
             return Err(ERR_MISALIGNED_PC![self.pc]);
         };
         self.pc += 4;
-        match unsafe { inst.op() } {
-            Op::REG => {
-                use inst::Funct;
+        match inst.op() {
+            REG => {
+                use inst::funct::*;
                 use inst::RegFields;
 
-                match unsafe { inst.funct() } {
+                match inst.funct() {
                     // NOTE: the difference between ADD and ADDU is that ADD
                     // generates a trap when an overflow occurs, so it is
                     // correct to use the unsafe u32::unchecked_add for ADDU
                     // and ADDIU because overflows in those operations are
                     // allowed
-                    Funct::ADD => {
+                    ADD => {
                         use inst::ArithLogFields;
 
                         match (self.regs[inst.rs()] as i32).checked_add(self.regs[inst.rt()] as i32)
@@ -336,18 +337,18 @@ impl Emulator {
                             None => return Err(ERR_OVERFLOW![]),
                         };
                     }
-                    Funct::ADDU => {
+                    ADDU => {
                         use inst::ArithLogFields;
 
                         self.regs[inst.rd()] =
                             unsafe { self.regs[inst.rs()].unchecked_add(self.regs[inst.rt()]) };
                     }
-                    Funct::AND => {
+                    AND => {
                         use inst::ArithLogFields;
 
                         self.regs[inst.rd()] = self.regs[inst.rs()] & self.regs[inst.rt()];
                     }
-                    Funct::DIV => {
+                    DIV => {
                         use inst::DivMultFields;
 
                         self.lo =
@@ -355,13 +356,13 @@ impl Emulator {
                         self.hi =
                             (self.regs[inst.rs()] as i32 % self.regs[inst.rt()] as i32) as u32;
                     }
-                    Funct::DIVU => {
+                    DIVU => {
                         use inst::DivMultFields;
 
                         self.lo = self.regs[inst.rs()] / self.regs[inst.rt()];
                         self.hi = self.regs[inst.rs()] % self.regs[inst.rt()];
                     }
-                    Funct::MULT => {
+                    MULT => {
                         use inst::DivMultFields;
 
                         let res =
@@ -369,102 +370,102 @@ impl Emulator {
                         self.hi = (res / (u32::MAX as i64 + 1)) as u32;
                         self.lo = (res % (u32::MAX as i64 + 1)) as u32;
                     }
-                    Funct::MULTU => {
+                    MULTU => {
                         use inst::DivMultFields;
 
                         let res = self.regs[inst.rs()] as u64 * self.regs[inst.rt()] as u64;
                         self.hi = (res / (u32::MAX as u64 + 1)) as u32;
                         self.lo = (res % (u32::MAX as u64 + 1)) as u32;
                     }
-                    Funct::NOR => {
+                    NOR => {
                         use inst::ArithLogFields;
 
                         self.regs[inst.rd()] = !(self.regs[inst.rs()] | self.regs[inst.rt()]);
                     }
-                    Funct::OR => {
+                    OR => {
                         use inst::ArithLogFields;
 
                         self.regs[inst.rd()] = self.regs[inst.rs()] | self.regs[inst.rt()];
                     }
-                    Funct::XOR => {
+                    XOR => {
                         use inst::ArithLogFields;
 
                         self.regs[inst.rd()] = self.regs[inst.rs()] ^ self.regs[inst.rt()];
                     }
-                    Funct::MFHI => {
+                    MFHI => {
                         use inst::MoveFromFields;
 
                         self.regs[inst.rd()] = self.hi;
                     }
-                    Funct::MFLO => {
+                    MFLO => {
                         use inst::MoveFromFields;
 
                         self.regs[inst.rd()] = self.lo;
                     }
-                    Funct::MTHI => {
+                    MTHI => {
                         use inst::MoveToFields;
 
                         self.hi = self.regs[inst.rs()];
                     }
-                    Funct::MTLO => {
+                    MTLO => {
                         use inst::MoveToFields;
 
                         self.lo = self.regs[inst.rs()];
                     }
-                    Funct::SLL => {
+                    SLL => {
                         use inst::ShiftFields;
 
                         self.regs[inst.rd()] = self.regs[inst.rt()] << inst.shamt();
                     }
-                    Funct::SLLV => {
+                    SLLV => {
                         use inst::ShiftVFields;
 
                         self.regs[inst.rd()] = self.regs[inst.rt()] << self.regs[inst.rs()];
                     }
-                    Funct::SRA => {
+                    SRA => {
                         use inst::ShiftFields;
 
                         self.regs[inst.rd()] = (self.regs[inst.rt()] as i32 >> inst.shamt()) as u32;
                     }
-                    Funct::SRAV => {
+                    SRAV => {
                         use inst::ShiftVFields;
 
                         self.regs[inst.rd()] =
                             (self.regs[inst.rt()] as i32 >> self.regs[inst.rs()]) as u32;
                     }
-                    Funct::SRL => {
+                    SRL => {
                         use inst::ShiftFields;
 
                         self.regs[inst.rd()] = self.regs[inst.rt()] >> inst.shamt();
                     }
-                    Funct::SRLV => {
+                    SRLV => {
                         use inst::ShiftVFields;
 
                         self.regs[inst.rd()] = self.regs[inst.rt()] >> self.regs[inst.rs()];
                     }
-                    Funct::SUB => {
+                    SUB => {
                         use inst::ArithLogFields;
 
                         self.regs[inst.rd()] =
                             (self.regs[inst.rs()] as i32 - self.regs[inst.rt()] as i32) as u32;
                     }
-                    Funct::SUBU => {
+                    SUBU => {
                         use inst::ArithLogFields;
 
                         self.regs[inst.rd()] = self.regs[inst.rs()] - self.regs[inst.rt()];
                     }
-                    Funct::JR => {
+                    JR => {
                         use inst::JumpRFields;
 
                         self.pc = self.regs[inst.rs()];
                     }
-                    Funct::JALR => {
+                    JALR => {
                         use inst::JumpRFields;
 
                         self.regs[31] = self.pc;
                         self.pc = self.regs[inst.rs()];
                     }
-                    Funct::SLT => {
+                    SLT => {
                         use inst::ArithLogFields;
 
                         self.regs[inst.rd()] =
@@ -474,7 +475,7 @@ impl Emulator {
                                 0
                             };
                     }
-                    Funct::SLTU => {
+                    SLTU => {
                         use inst::ArithLogFields;
 
                         self.regs[inst.rd()] = if self.regs[inst.rs()] < self.regs[inst.rt()] {
@@ -483,10 +484,10 @@ impl Emulator {
                             0
                         };
                     }
-                    unknown => return Err(ERR_FUNCT![<Funct as Into<u8>>::into(unknown)]),
+                    unknown => return Err(ERR_FUNCT![unknown]),
                 }
             }
-            Op::ADDI => {
+            ADDI => {
                 use inst::ArithLogIFields;
 
                 match (self.regs[inst.rs()] as i32).checked_add(inst.imm() as i16 as i32) {
@@ -494,52 +495,52 @@ impl Emulator {
                     None => return Err(ERR_OVERFLOW![]),
                 };
             }
-            Op::ADDIU => {
+            ADDIU => {
                 use inst::ArithLogIFields;
 
                 self.regs[inst.rt()] =
                     unsafe { self.regs[inst.rs()].unchecked_add(inst.imm() as u32) };
             }
-            Op::ANDI => {
+            ANDI => {
                 use inst::ArithLogIFields;
 
                 self.regs[inst.rt()] = self.regs[inst.rs()] & inst.imm() as u32;
             }
-            Op::ORI => {
+            ORI => {
                 use inst::ArithLogIFields;
 
                 self.regs[inst.rt()] = self.regs[inst.rs()] | inst.imm() as u32;
             }
-            Op::XORI => {
+            XORI => {
                 use inst::ArithLogIFields;
 
                 self.regs[inst.rt()] = self.regs[inst.rs()] ^ inst.imm() as u32;
             }
             // PERF: figure out if unsafe and pointer hyjinks can speed LHI and LLO up
-            Op::LHI => {
+            LHI => {
                 use inst::LoadIFields;
 
                 self.regs[inst.rt()] &= u16::MAX as u32;
                 self.regs[inst.rt()] |= (inst.imm() as u32) << 16;
             }
-            Op::LLO => {
+            LLO => {
                 use inst::LoadIFields;
 
                 self.regs[inst.rt()] &= (u16::MAX as u32) << 16;
                 self.regs[inst.rt()] |= inst.imm() as u32;
             }
-            Op::J => {
+            J => {
                 use inst::JumpFields;
 
                 self.pc = (self.pc as i32 + inst.imm()) as u32;
             }
-            Op::JAL => {
+            JAL => {
                 use inst::JumpFields;
 
                 self.regs[31] = self.pc;
                 self.pc = (self.pc as i32 + inst.imm()) as u32;
             }
-            Op::SLTI => {
+            SLTI => {
                 use inst::ArithLogIFields;
 
                 self.regs[inst.rt()] = if (self.regs[inst.rs()] as i32) < (inst.imm() as i16 as i32)
@@ -549,7 +550,7 @@ impl Emulator {
                     0
                 };
             }
-            Op::SLTIU => {
+            SLTIU => {
                 use inst::ArithLogIFields;
 
                 self.regs[inst.rt()] = if self.regs[inst.rs()] < inst.imm() as u32 {
@@ -558,47 +559,47 @@ impl Emulator {
                     0
                 };
             }
-            Op::BEQ => {
+            BEQ => {
                 use inst::BranchFields;
 
                 if self.regs[inst.rs()] == self.regs[inst.rt()] {
                     self.pc = (self.pc as i32 + inst.imm()) as u32;
                 }
             }
-            Op::BNE => {
+            BNE => {
                 use inst::BranchFields;
 
                 if self.regs[inst.rs()] != self.regs[inst.rt()] {
                     self.pc = (self.pc as i32 + inst.imm()) as u32;
                 }
             }
-            Op::BLEZ => {
+            BLEZ => {
                 use inst::BranchZFields;
 
                 if self.regs[inst.rs()] as i32 <= 0 {
                     self.pc = (self.pc as i32 + inst.imm()) as u32;
                 }
             }
-            Op::BGTZ => {
+            BGTZ => {
                 use inst::BranchZFields;
 
                 if self.regs[inst.rs()] as i32 > 0 {
                     self.pc = (self.pc as i32 + inst.imm()) as u32;
                 }
             }
-            Op::LB => {
+            LB => {
                 use inst::LoadStoreFields;
 
                 self.regs[inst.rt()] =
                     memory[(self.regs[inst.rs()] as i32 + inst.imm()) as usize] as i8 as i32 as u32;
             }
-            Op::LBU => {
+            LBU => {
                 use inst::LoadStoreFields;
 
                 self.regs[inst.rt()] =
                     memory[(self.regs[inst.rs()] as i32 + inst.imm()) as usize] as u32;
             }
-            Op::LH => {
+            LH => {
                 use inst::LoadStoreFields;
 
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
@@ -610,7 +611,7 @@ impl Emulator {
                     return Err(ERR_MISALIGNED_LH![addr]);
                 }
             }
-            Op::LHU => {
+            LHU => {
                 use inst::LoadStoreFields;
 
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
@@ -622,7 +623,7 @@ impl Emulator {
                     return Err(ERR_MISALIGNED_LH![addr]);
                 }
             }
-            Op::LW => {
+            LW => {
                 use inst::LoadStoreFields;
 
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
@@ -633,13 +634,13 @@ impl Emulator {
                     return Err(ERR_MISALIGNED_LW![addr]);
                 }
             }
-            Op::SB => {
+            SB => {
                 use inst::LoadStoreFields;
 
                 memory[(self.regs[inst.rs()] as i32 + inst.imm()) as usize] =
                     (self.regs[inst.rt()] & MASK8) as u8;
             }
-            Op::SH => {
+            SH => {
                 use inst::LoadStoreFields;
 
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
@@ -650,7 +651,7 @@ impl Emulator {
                     return Err(ERR_MISALIGNED_SH![addr]);
                 }
             }
-            Op::SW => {
+            SW => {
                 use inst::LoadStoreFields;
 
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
@@ -661,7 +662,7 @@ impl Emulator {
                     return Err(ERR_MISALIGNED_SW![addr]);
                 }
             }
-            Op::SYSCALL => match syscall_handler {
+            SYSCALL => match syscall_handler {
                 Some(syscall_handler) => {
                     #[cfg(not(target_arch = "wasm32"))]
                     {
@@ -703,10 +704,10 @@ impl Emulator {
                     }
                 }
                 None => {
-                    return Err(ERR_OP![<Op as Into<u8>>::into(Op::SYSCALL)]);
+                    return Err(ERR_OP![SYSCALL]);
                 }
             },
-            unknown => return Err(ERR_OP![<Op as Into<u8>>::into(unknown)]),
+            unknown => return Err(ERR_OP![unknown]),
         };
 
         Ok(())
