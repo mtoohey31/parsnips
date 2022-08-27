@@ -1,6 +1,9 @@
 #![no_std]
 #![feature(lang_items, slice_as_chunks, unchecked_math)]
 
+// TODO: fix the assumption that usize is at least as big as a u32. This isn't
+// true on some platforms, such as msp430-none-elf
+
 #[cfg(target_arch = "wasm32")]
 mod error {
     use core::{fmt, str::from_utf8_unchecked};
@@ -265,6 +268,7 @@ pub type SyscallHandler<'a> = &'a dyn Fn(&[u32; 4]) -> [Option<u32>; 2];
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub struct Emulator {
+    // TODO: figure out what $gp and $fp should be initialized to
     regs: [u32; 32],
     // PERF: consider refactoring to a single u64
     lo: u32,
