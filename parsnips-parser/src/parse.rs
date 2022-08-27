@@ -395,7 +395,7 @@ mod tests {
     #[test]
     fn basic() {
         assert_eq!(
-            parse(include_str!("../tests/basic.asm")).unwrap(),
+            parse(include_str!("../../test/basic.asm")).unwrap(),
             Ast {
                 sections: vec![Section::Text(vec![
                     Entry::Instruction(Instruction {
@@ -432,7 +432,7 @@ mod tests {
         // TODO: update this to include the contents of literals and other
         // missing data
         assert_eq!(
-            parse(include_str!("../tests/Fibonacci.asm")).unwrap(),
+            parse(include_str!("../../test/fib.asm")).unwrap(),
             Ast {
                 sections: vec![
                     Section::Data(vec![

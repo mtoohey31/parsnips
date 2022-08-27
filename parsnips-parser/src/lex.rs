@@ -294,7 +294,7 @@ mod tests {
     #[test]
     fn basic() {
         assert_eq!(
-            lex(include_str!("../tests/basic.asm"))
+            lex(include_str!("../../test/basic.asm"))
                 .unwrap()
                 .into_iter()
                 .filter(|t| *t != Token::Whitespace)
