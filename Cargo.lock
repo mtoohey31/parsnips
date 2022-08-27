@@ -182,6 +182,10 @@ dependencies = [
 [[package]]
 name = "parsnips-parser"
 version = "0.1.0"
+dependencies = [
+ "strum",
+ "strum_macros",
+]
 
 [[package]]
 name = "proc-macro-error"

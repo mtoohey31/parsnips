@@ -1,8 +1,9 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-#[cfg_attr(test, derive(Debug))]
-#[derive(PartialEq, Eq)]
+use crate::{Literal, NumLiteral};
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Token<'a> {
     Dot,
     Comma,
@@ -14,32 +15,10 @@ pub enum Token<'a> {
     Newline,
     Ident(&'a str),
     Comment(&'a str),
-    Literal(LiteralToken<'a>),
+    Literal(Literal<'a>),
 }
 
-#[cfg_attr(test, derive(Debug))]
-#[derive(PartialEq, Eq)]
-pub enum NumKind {
-    Binary,
-    Octal,
-    Decimal,
-    Hex,
-}
-
-#[cfg_attr(test, derive(Debug))]
-#[derive(PartialEq, Eq)]
-pub enum LiteralToken<'a> {
-    Num {
-        negative: bool,
-        kind: NumKind,
-        body: &'a str,
-    },
-    Char(char),
-    Str(&'a str),
-}
-
-#[cfg_attr(test, derive(Debug))]
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum LexErrorKind {
     UnexpectedToken(char),
     InvalidCharEscape(char),
@@ -49,8 +28,7 @@ pub enum LexErrorKind {
     UnterminatedNum,
 }
 
-#[cfg_attr(test, derive(Debug))]
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct LexError {
     pos: (usize, usize),
     kind: LexErrorKind,
@@ -107,48 +85,48 @@ pub fn lex<'a>(input: &'a str) -> Result<Vec<Token<'a>>, LexError> {
                     match ci.peek() {
                         Some((_, 'b')) => {
                             ci.next().unwrap();
-                            LiteralToken::Num {
+                            Literal::Num(NumLiteral {
                                 negative,
-                                kind: NumKind::Binary,
+                                radix: 2,
                                 body: &input[pos + 2..failing_pos!(pos + 2, ci, is_binary_digit)],
-                            }
+                            })
                         }
                         Some((_, 'o')) => {
                             ci.next().unwrap();
-                            LiteralToken::Num {
+                            Literal::Num(NumLiteral {
                                 negative,
-                                kind: NumKind::Octal,
+                                radix: 8,
                                 body: &input[pos + 2..failing_pos!(pos + 2, ci, is_octal_digit)],
-                            }
+                            })
                         }
                         Some((_, 'x')) => {
                             ci.next().unwrap();
-                            LiteralToken::Num {
+                            Literal::Num(NumLiteral {
                                 negative,
-                                kind: NumKind::Hex,
+                                radix: 16,
                                 body: &input[pos + 2..failing_pos!(pos + 2, ci, is_hex_digit)],
-                            }
+                            })
                         }
-                        _ => LiteralToken::Num {
+                        _ => Literal::Num(NumLiteral {
                             negative,
-                            kind: NumKind::Decimal,
+                            radix: 10,
                             body: &input[pos..failing_pos!(pos, ci, is_decimal_digit)],
-                        },
+                        }),
                     }
                 } else {
-                    LiteralToken::Num {
+                    Literal::Num(NumLiteral {
                         negative,
-                        kind: NumKind::Decimal,
+                        radix: 10,
                         body: &input[pos..failing_pos!(pos, ci, is_decimal_digit)],
-                    }
+                    })
                 }));
             }
             '\'' => {
                 let (mut pos, res) = match ci.next() {
                     Some((pos, '\\')) => match ci.next() {
-                        Some((pos, 't')) => (pos, Ok(Token::Literal(LiteralToken::Char('\t')))),
-                        Some((pos, 'n')) => (pos, Ok(Token::Literal(LiteralToken::Char('\n')))),
-                        Some((pos, '\\')) => (pos, Ok(Token::Literal(LiteralToken::Char('\\')))),
+                        Some((pos, 't')) => (pos, Ok(Token::Literal(Literal::Char('\t')))),
+                        Some((pos, 'n')) => (pos, Ok(Token::Literal(Literal::Char('\n')))),
+                        Some((pos, '\\')) => (pos, Ok(Token::Literal(Literal::Char('\\')))),
                         Some((pos, c)) => (
                             pos,
                             Err(LexError::at(pos, LexErrorKind::InvalidCharEscape(c))),
@@ -158,7 +136,7 @@ pub fn lex<'a>(input: &'a str) -> Result<Vec<Token<'a>>, LexError> {
                             Err(LexError::at(pos + 1, LexErrorKind::UnterminatedChar)),
                         ),
                     },
-                    Some((pos, c)) => (pos, Ok(Token::Literal(LiteralToken::Char(c)))),
+                    Some((pos, c)) => (pos, Ok(Token::Literal(Literal::Char(c)))),
                     None => (
                         pos,
                         Err(LexError::at(pos + 1, LexErrorKind::UnterminatedChar)),
@@ -177,7 +155,7 @@ pub fn lex<'a>(input: &'a str) -> Result<Vec<Token<'a>>, LexError> {
                 while let Some((p, c)) = ci.next() {
                     match c {
                         '"' => {
-                            tokens.push(Token::Literal(LiteralToken::Str(&input[pos + 1..p])));
+                            tokens.push(Token::Literal(Literal::Str(&input[pos + 1..p])));
                             continue 'OUTER;
                         }
                         '\\' => {
@@ -303,11 +281,11 @@ mod tests {
                 Token::Dollar,
                 Token::Ident("zero"),
                 Token::Comma,
-                Token::Literal(LiteralToken::Num {
+                Token::Literal(Literal::Num(NumLiteral {
                     negative: false,
-                    kind: NumKind::Decimal,
+                    radix: 10,
                     body: "13"
-                }),
+                })),
                 Token::Newline,
                 Token::Ident("addi"),
                 Token::Dollar,
@@ -316,11 +294,11 @@ mod tests {
                 Token::Dollar,
                 Token::Ident("zero"),
                 Token::Comma,
-                Token::Literal(LiteralToken::Num {
+                Token::Literal(Literal::Num(NumLiteral {
                     negative: false,
-                    kind: NumKind::Decimal,
+                    radix: 10,
                     body: "26"
-                }),
+                })),
                 Token::Newline,
                 Token::Ident("add"),
                 Token::Dollar,
@@ -348,11 +326,11 @@ mod tests {
     fn int() {
         assert_eq!(
             lex("-5894").unwrap(),
-            vec![Token::Literal(LiteralToken::Num {
+            vec![Token::Literal(Literal::Num(NumLiteral {
                 negative: true,
-                kind: NumKind::Decimal,
+                radix: 10,
                 body: "5894"
-            })]
+            }))]
         )
     }
 
@@ -360,11 +338,11 @@ mod tests {
     fn uint() {
         assert_eq!(
             lex("5894").unwrap(),
-            vec![Token::Literal(LiteralToken::Num {
+            vec![Token::Literal(Literal::Num(NumLiteral {
                 negative: false,
-                kind: NumKind::Decimal,
+                radix: 10,
                 body: "5894"
-            })]
+            }))]
         )
     }
 
@@ -372,11 +350,11 @@ mod tests {
     fn negative_overflow() {
         assert_eq!(
             lex("-584654654654654654694").unwrap(),
-            vec![Token::Literal(LiteralToken::Num {
+            vec![Token::Literal(Literal::Num(NumLiteral {
                 negative: true,
-                kind: NumKind::Decimal,
+                radix: 10,
                 body: "584654654654654654694"
-            })]
+            }))]
         )
     }
 
@@ -384,11 +362,11 @@ mod tests {
     fn positive_overflow() {
         assert_eq!(
             lex("584654654654654654694").unwrap(),
-            vec![Token::Literal(LiteralToken::Num {
+            vec![Token::Literal(Literal::Num(NumLiteral {
                 negative: false,
-                kind: NumKind::Decimal,
+                radix: 10,
                 body: "584654654654654654694"
-            })]
+            }))]
         )
     }
 
@@ -396,11 +374,11 @@ mod tests {
     fn binary() {
         assert_eq!(
             lex("-0b0100").unwrap(),
-            vec![Token::Literal(LiteralToken::Num {
+            vec![Token::Literal(Literal::Num(NumLiteral {
                 negative: true,
-                kind: NumKind::Binary,
+                radix: 2,
                 body: "0100"
-            })]
+            }))]
         )
     }
 
@@ -408,11 +386,11 @@ mod tests {
     fn ocatal() {
         assert_eq!(
             lex("-0o0700").unwrap(),
-            vec![Token::Literal(LiteralToken::Num {
+            vec![Token::Literal(Literal::Num(NumLiteral {
                 negative: true,
-                kind: NumKind::Octal,
+                radix: 8,
                 body: "0700"
-            })]
+            }))]
         )
     }
 
@@ -420,11 +398,11 @@ mod tests {
     fn hex() {
         assert_eq!(
             lex("-0x0AbE").unwrap(),
-            vec![Token::Literal(LiteralToken::Num {
+            vec![Token::Literal(Literal::Num(NumLiteral {
                 negative: true,
-                kind: NumKind::Hex,
+                radix: 16,
                 body: "0AbE"
-            })]
+            }))]
         )
     }
 
@@ -432,7 +410,7 @@ mod tests {
     fn string_simple() {
         assert_eq!(
             lex("\"a string\"").unwrap(),
-            vec![Token::Literal(LiteralToken::Str("a string"))]
+            vec![Token::Literal(Literal::Str("a string"))]
         )
     }
 
