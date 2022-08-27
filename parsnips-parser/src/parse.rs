@@ -475,14 +475,6 @@ mod tests {
                             arguments: vec![Argument::Register("t2"), Argument::Literal("1")]
                         }),
                         Entry::Instruction(Instruction {
-                            name: "add.d",
-                            arguments: vec![
-                                Argument::Register("f0"),
-                                Argument::Register("f2"),
-                                Argument::Register("f4")
-                            ]
-                        }),
-                        Entry::Instruction(Instruction {
                             name: "sw",
                             arguments: vec![
                                 Argument::Register("t2"),
