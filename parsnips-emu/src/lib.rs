@@ -563,14 +563,14 @@ impl Emulator {
                 use inst::BranchFields;
 
                 if self.regs[inst.rs()] == self.regs[inst.rt()] {
-                    self.pc = (self.pc as i32 + inst.imm()) as u32;
+                    self.pc = (self.pc as i32 + inst.imm() as i16 as i32) as u32;
                 }
             }
             BNE => {
                 use inst::BranchFields;
 
                 if self.regs[inst.rs()] != self.regs[inst.rt()] {
-                    self.pc = (self.pc as i32 + inst.imm()) as u32;
+                    self.pc = (self.pc as i32 + inst.imm() as i16 as i32) as u32;
                 }
             }
             BLEZ => {

@@ -143,8 +143,8 @@ impl MoveToFields for Inst {
 // immediate encodings
 
 pub trait ArithLogIFields {
-    fn rt(&self) -> usize;
     fn rs(&self) -> usize;
+    fn rt(&self) -> usize;
     fn imm(&self) -> u16;
 }
 impl ArithLogIFields for Inst {
@@ -180,7 +180,7 @@ impl LoadIFields for Inst {
 pub trait BranchFields {
     fn rs(&self) -> usize;
     fn rt(&self) -> usize;
-    fn imm(&self) -> i32;
+    fn imm(&self) -> u16;
 }
 impl BranchFields for Inst {
     #[inline(always)]
@@ -192,8 +192,8 @@ impl BranchFields for Inst {
         (self >> 16 & MASK5) as usize
     }
     #[inline(always)]
-    fn imm(&self) -> i32 {
-        (self & MASK16) as i16 as i32
+    fn imm(&self) -> u16 {
+        (self & MASK16) as u16
     }
 }
 
