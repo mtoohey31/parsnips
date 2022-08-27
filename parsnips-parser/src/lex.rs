@@ -63,13 +63,6 @@ impl LexError {
             kind,
         }
     }
-
-    fn from(start: usize, end: usize, kind: LexErrorKind) -> Self {
-        Self {
-            pos: (start, end),
-            kind,
-        }
-    }
 }
 
 macro_rules! failing_pos {
