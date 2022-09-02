@@ -1,5 +1,5 @@
 #![no_std]
-#![feature(lang_items, slice_as_chunks, unchecked_math)]
+#![feature(lang_items, slice_as_chunks)]
 
 // TODO: fix the assumption that usize is at least as big as a u32. This isn't
 // true on some platforms, such as msp430-none-elf
@@ -341,7 +341,7 @@ impl Emulator {
                         use inst::ArithLogFields;
 
                         self.regs[inst.rd()] =
-                            unsafe { self.regs[inst.rs()].unchecked_add(self.regs[inst.rt()]) };
+                            self.regs[inst.rs()].overflowing_add(self.regs[inst.rt()]).0;
                     }
                     AND => {
                         use inst::ArithLogFields;
@@ -498,8 +498,7 @@ impl Emulator {
             ADDIU => {
                 use inst::ArithLogIFields;
 
-                self.regs[inst.rt()] =
-                    unsafe { self.regs[inst.rs()].unchecked_add(inst.imm() as u32) };
+                self.regs[inst.rt()] = self.regs[inst.rs()].overflowing_add(inst.imm() as u32).0;
             }
             ANDI => {
                 use inst::ArithLogIFields;
