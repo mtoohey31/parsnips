@@ -1,5 +1,5 @@
 #![no_std]
-#![feature(lang_items, slice_as_chunks)]
+#![feature(lang_items)]
 
 // TODO: fix the assumption that usize is at least as big as a u32. This isn't
 // true on some platforms, such as msp430-none-elf
@@ -264,7 +264,7 @@ const MASK16: u32 = (1 << 16) - 1;
 pub type SyscallHandler = js_sys::Function;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub type SyscallHandler<'a> = &'a dyn Fn(&[u32; 4]) -> [Option<u32>; 2];
+pub type SyscallHandler<'a> = &'a dyn Fn(u32, u32, u32, u32) -> (Option<u32>, Option<u32>);
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub struct Emulator {
@@ -665,7 +665,8 @@ impl Emulator {
                 Some(syscall_handler) => {
                     #[cfg(not(target_arch = "wasm32"))]
                     {
-                        let [v0, v1] = syscall_handler(&self.regs.as_rchunks::<4>().1[1]);
+                        let (v0, v1) =
+                            syscall_handler(self.regs[4], self.regs[5], self.regs[6], self.regs[7]);
                         if let Some(v0) = v0 {
                             self.regs[2] = v0;
                         }
@@ -2062,9 +2063,12 @@ mod tests {
         let mut emu = Emulator::new();
         emu.step(
             &mut prog,
-            Some(&|args: &[u32; 4]| -> [Option<u32>; 2] {
-                assert_eq!(args, &[4, 5, 6, 7]);
-                [None, None]
+            Some(&|a0, a1, a2, a3| -> (Option<u32>, Option<u32>) {
+                assert_eq!(a0, 4);
+                assert_eq!(a1, 5);
+                assert_eq!(a2, 6);
+                assert_eq!(a3, 7);
+                (None, None)
             }),
         )
         .unwrap();
@@ -2076,7 +2080,7 @@ mod tests {
         let mut emu = Emulator::new();
         emu.step(
             &mut prog,
-            Some(&|_: &[u32; 4]| -> [Option<u32>; 2] { [Some(17), None] }),
+            Some(&|_, _, _, _| -> (Option<u32>, Option<u32>) { (Some(17), None) }),
         )
         .unwrap();
         assert_eq!(emu.regs[2], 17);
@@ -2088,7 +2092,7 @@ mod tests {
         let mut emu = Emulator::new();
         emu.step(
             &mut prog,
-            Some(&|_: &[u32; 4]| -> [Option<u32>; 2] { [None, Some(98)] }),
+            Some(&|_, _, _, _| -> (Option<u32>, Option<u32>) { (None, Some(98)) }),
         )
         .unwrap();
         assert_eq!(emu.regs[3], 98);
@@ -2100,7 +2104,7 @@ mod tests {
         let mut emu = Emulator::new();
         emu.step(
             &mut prog,
-            Some(&|_: &[u32; 4]| -> [Option<u32>; 2] { [Some(9115), Some(919)] }),
+            Some(&|_, _, _, _| -> (Option<u32>, Option<u32>) { (Some(9115), Some(919)) }),
         )
         .unwrap();
         assert_eq!(emu.regs[2], 9115);
