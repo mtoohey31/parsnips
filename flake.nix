@@ -54,6 +54,7 @@
               cargo-expand
               cargo-watch
               rust-analyzer
+              unixtools.xxd
             ] ++ (with nodePackages; [
               svelte-language-server
               nodePackages."@tailwindcss/language-server"
