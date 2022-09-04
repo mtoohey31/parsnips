@@ -180,7 +180,7 @@ impl LoadIFields for Inst {
 pub trait BranchFields {
     fn rs(&self) -> usize;
     fn rt(&self) -> usize;
-    fn imm(&self) -> u16;
+    fn imm(&self) -> i32;
 }
 impl BranchFields for Inst {
     #[inline(always)]
@@ -192,8 +192,8 @@ impl BranchFields for Inst {
         (self >> 16 & MASK5) as usize
     }
     #[inline(always)]
-    fn imm(&self) -> u16 {
-        (self & MASK16) as u16
+    fn imm(&self) -> i32 {
+        ((self & MASK16) as i16 as i32) << 2
     }
 }
 
@@ -208,7 +208,7 @@ impl BranchZFields for Inst {
     }
     #[inline(always)]
     fn imm(&self) -> i32 {
-        (self & MASK16) as i16 as i32
+        ((self & MASK16) as i16 as i32) << 2
     }
 }
 
@@ -240,7 +240,7 @@ pub trait JumpFields {
 impl JumpFields for Inst {
     #[inline(always)]
     fn imm(&self) -> i32 {
-        ((self & MASK26) << 6) as i32 >> 6
+        ((self & MASK26) << 6) as i32 >> 4
     }
 }
 

@@ -1368,7 +1368,7 @@ mod tests {
             0b001000_00001_00001_0000000000000000 | 1,
             // jump negative 8 relative to what the PC would become, back to the
             // first instruction
-            0b000010_11111111111111111111111000,
+            0b000010_11111111111111111111111110,
             0b001000_00000_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
@@ -1382,7 +1382,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn j_outofbounds() {
         let mut prog = le_byte_arr![
-            0b000010_00000000000000000010000000,
+            0b000010_00000000000000000000100000,
             0b000000_00000_00000_0000000000000000,
         ];
         let mut emu = Emulator::new();
@@ -1456,7 +1456,7 @@ mod tests {
             0b001000_00001_00001_0000000000000000 | 1,
             // jump negative 8 relative to what the PC would become, back to the
             // first instruction
-            0b000011_11111111111111111111111000,
+            0b000011_11111111111111111111111110,
             0b001000_00000_00010_0000000000000000 | 1,
         ];
         let mut emu = Emulator::new();
@@ -1701,7 +1701,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn beq_eq() {
-        let mut prog = le_byte_arr![0b000100_00000_00001_0000000000000000 | 12];
+        let mut prog = le_byte_arr![0b000100_00000_00001_0000000000000000 | (12 >> 2)];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.pc, 4 + 12);
@@ -1711,7 +1711,7 @@ mod tests {
     fn beq_neq() {
         let mut prog = le_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
-            0b000100_00000_00001_0000000000000000 | 12,
+            0b000100_00000_00001_0000000000000000 | (12 >> 2),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
@@ -1724,7 +1724,7 @@ mod tests {
     fn bne_neq() {
         let mut prog = le_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
-            0b000101_00000_00001_0000000000000000 | 12,
+            0b000101_00000_00001_0000000000000000 | (12 >> 2),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
@@ -1734,7 +1734,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn bne_eq() {
-        let mut prog = le_byte_arr![0b000101_00000_00001_0000000000000000 | 12];
+        let mut prog = le_byte_arr![0b000101_00000_00001_0000000000000000 | (12 >> 2)];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.pc, 4);
@@ -1743,7 +1743,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn blez_zero() {
-        let mut prog = le_byte_arr![0b000110_00000_00000_0000000000000000 | 12];
+        let mut prog = le_byte_arr![0b000110_00000_00000_0000000000000000 | (12 >> 2)];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.pc, 4 + 12);
@@ -1753,7 +1753,7 @@ mod tests {
     fn blez_pos_one() {
         let mut prog = le_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
-            0b000110_00001_00000_0000000000000000 | 12,
+            0b000110_00001_00000_0000000000000000 | (12 >> 2),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
@@ -1765,7 +1765,7 @@ mod tests {
     fn blez_minus_one() {
         let mut prog = le_byte_arr![
             0b001000_00000_00001_0000000000000000 | (-1_i16 as u16 as u32),
-            0b000110_00001_00000_0000000000000000 | 12,
+            0b000110_00001_00000_0000000000000000 | (12 >> 2),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
@@ -1776,7 +1776,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn bgtz_zero() {
-        let mut prog = le_byte_arr![0b000111_00000_00000_0000000000000000 | 12];
+        let mut prog = le_byte_arr![0b000111_00000_00000_0000000000000000 | (12 >> 2)];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
         assert_eq!(emu.pc, 4);
@@ -1786,7 +1786,7 @@ mod tests {
     fn bgtz_one() {
         let mut prog = le_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
-            0b000111_00001_00000_0000000000000000 | 12,
+            0b000111_00001_00000_0000000000000000 | (12 >> 2),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog, None).unwrap();
