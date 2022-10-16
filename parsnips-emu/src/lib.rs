@@ -1,5 +1,4 @@
-#![no_std]
-#![feature(lang_items)]
+#![cfg_attr(not(test), no_std)]
 
 // TODO: fix the assumption that usize is at least as big as a u32. This isn't
 // true on some platforms, such as msp430-none-elf
@@ -241,18 +240,6 @@ mod error {
 }
 
 use error::*;
-
-#[cfg(not(any(target_arch = "wasm32", test)))]
-#[lang = "eh_personality"]
-extern "C" fn eh_personality() {}
-
-#[cfg(not(any(target_arch = "wasm32", test)))]
-use core::panic::PanicInfo;
-#[cfg(not(any(target_arch = "wasm32", test)))]
-#[panic_handler]
-fn panic(_: &PanicInfo) -> ! {
-    loop {}
-}
 
 use inst::Inst;
 use parsnips_inst as inst;
