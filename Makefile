@@ -15,16 +15,20 @@ fmt:
 	rustfmt $$(find . -name '*.rs')
 
 .PHONY: test
-test: test-emu test-parser test-web
+test: test-parser test-asm test-emu test-web
+
+.PHONY: test-parser
+test-parser:
+	cargo test -p parsnips-parser --quiet
+
+.PHONY: test-asm
+test-asm:
+	cargo test -p parsnips-asm --quiet
 
 .PHONY: test-emu
 test-emu:
 	cargo test -p parsnips-emu --quiet
 	cd parsnips-emu && wasm-pack test --node --mode no-install
-
-.PHONY: test-parser
-test-parser:
-	cargo test -p parsnips-parser --quiet
 
 .PHONY: test-web
 test-web: parsnips-web/node_modules parsnips-web/node_modules/parsnips-emu
