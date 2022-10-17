@@ -540,12 +540,6 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
         }
     }
 
-    #[cfg(test)]
-    {
-        extern crate std;
-        std::dbg!(&label_definitions, &label_references);
-    }
-
     for reference in label_references {
         let definition = label_definitions
             .get(reference.ident)
