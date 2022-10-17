@@ -552,11 +552,11 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
             .ok_or_else(|| AssembleError::UndefinedLabel(reference.ident))?;
         let imm: u32 = match reference.kind {
             ReferenceKind::Jump => {
-                let full = *definition as u32 >> 2;
-                if full > (1 << 26) - 1 {
-                    return Err(AssembleError::OverflowingLabelReference(full));
-                }
-                full
+                let full = (*definition as i32 - (reference.location + 4) as i32) >> 2;
+                full.checked_shl(6)
+                    .ok_or(AssembleError::OverflowingLabelReference(full as u32))?
+                    as u32
+                    >> 6
             }
             ReferenceKind::Imm => {
                 let full = (*definition as i32 - (reference.location + 4) as i32) >> 2;
@@ -695,7 +695,7 @@ mod tests {
             // add $a1, $zero, $t5
             new_reg(Reg::Zero, Reg::T5, Reg::A1, 0, Funct::ADD),
             // jal print
-            new_jump(Op::JAL) | 41,
+            new_jump(Op::JAL) | 10,
             // li $v0, 10
             new_arith_log_i(Op::ADDI, Reg::Zero, Reg::V0, 10),
             // syscall
@@ -952,7 +952,7 @@ mod tests {
             j EXIT
             EXIT: syscall
             "#,
-            new_jump(Op::J) | 1,
+            new_jump(Op::J) | 0,
             SYSCALL
         );
         asm_text_test!("syscall", SYSCALL)
