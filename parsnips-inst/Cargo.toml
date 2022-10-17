@@ -10,6 +10,6 @@ repository = "https://github.com/mtoohey31/parsnips"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-# needed for converting between opcode/function enums and strings
+# converting between opcode/function enums and strings
 strum = { version = "0.24", default-features = false }
 strum_macros = { version = "0.24", default-features = false }
