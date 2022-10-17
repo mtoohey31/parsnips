@@ -64,7 +64,7 @@ pub struct NumLiteral<'a> {
     // includes just the sign and the number body when there's a 0b, 0o, 0x
     // prefix
     pub negative: bool,
-    pub radix: usize,
+    pub radix: u32,
     pub body: &'a str,
 }
 
@@ -79,9 +79,7 @@ impl ParseNonNeg for u8 {
     where
         Self: Sized,
     {
-        num_lit
-            .body
-            .parse::<Self>()
+        Self::from_str_radix(num_lit.body, num_lit.radix)
             .map_err(|err| err.kind().clone())
             .and_then(|raw| {
                 if raw != 0 && num_lit.negative {
@@ -98,9 +96,7 @@ impl ParseNonNeg for usize {
     where
         Self: Sized,
     {
-        num_lit
-            .body
-            .parse::<Self>()
+        Self::from_str_radix(num_lit.body, num_lit.radix)
             .map_err(|err| err.kind().clone())
             .and_then(|raw| {
                 if raw != 0 && num_lit.negative {
@@ -120,9 +116,7 @@ pub trait ParseMaybeNeg {
 
 impl ParseMaybeNeg for u8 {
     fn parse_maybe_neg(num_lit: NumLiteral) -> Result<Self, IntErrorKind> {
-        num_lit
-            .body
-            .parse::<Self>()
+        Self::from_str_radix(num_lit.body, num_lit.radix)
             .map_err(|err| err.kind().clone())
             .and_then(|raw| {
                 if num_lit.negative {
@@ -141,9 +135,7 @@ impl ParseMaybeNeg for u16 {
     where
         Self: Sized,
     {
-        num_lit
-            .body
-            .parse::<Self>()
+        Self::from_str_radix(num_lit.body, num_lit.radix)
             .map_err(|err| err.kind().clone())
             .and_then(|raw| {
                 if num_lit.negative {
@@ -162,9 +154,7 @@ impl ParseMaybeNeg for u32 {
     where
         Self: Sized,
     {
-        num_lit
-            .body
-            .parse::<Self>()
+        Self::from_str_radix(num_lit.body, num_lit.radix)
             .map_err(|err| err.kind().clone())
             .and_then(|raw| {
                 if num_lit.negative {
