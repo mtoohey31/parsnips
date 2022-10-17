@@ -592,6 +592,7 @@ mod tests {
     use super::*;
     use alloc::borrow::ToOwned;
     use parsnips_parser::parse;
+    use pretty_assertions::assert_eq;
 
     fn str_to_u32(input: &str) -> u32 {
         input

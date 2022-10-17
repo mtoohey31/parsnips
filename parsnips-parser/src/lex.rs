@@ -257,10 +257,10 @@ fn handle_escape((pos, c): (usize, char)) -> Result<char, LexError> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use alloc::vec;
     use alloc::vec::Vec;
-
-    use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn basic() {

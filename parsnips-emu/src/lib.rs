@@ -704,6 +704,7 @@ impl Emulator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
     use wasm_bindgen_test::wasm_bindgen_test;
 
     macro_rules! le_byte_arr {

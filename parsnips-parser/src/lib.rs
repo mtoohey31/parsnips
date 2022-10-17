@@ -491,6 +491,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
 mod tests {
     use super::*;
     use alloc::vec;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn basic() {
