@@ -1,4 +1,4 @@
-#![cfg_attr(not(test), no_std)]
+#![no_std]
 
 // TODO: fix the assumption that usize is at least as big as a u32. This isn't
 // true on some platforms, such as msp430-none-elf
