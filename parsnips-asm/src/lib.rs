@@ -577,7 +577,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
     }
 
     if Some(true) == initial_section_data {
-        let imm = initial_text_section.ok_or(AssembleError::NoText)? >> 2;
+        let imm = initial_text_section.ok_or(AssembleError::NoText)? - 4 >> 2;
         if imm > (1 << 26) - 1 {
             return Err(AssembleError::OverflowingLabelReference(imm));
         }
@@ -644,7 +644,7 @@ mod tests {
     fn fib() {
         let mut expected: Vec<u8> = Vec::new();
         expected.extend_from_slice(program![
-            new_jump(Op::J) | 14, // assembler inserted jump to first .text
+            new_jump(Op::J) | 13, // assembler inserted jump to first .text
             // .data
             // fibs
             0,
