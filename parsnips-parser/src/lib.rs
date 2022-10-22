@@ -3,7 +3,7 @@
 mod lex;
 use core::num::IntErrorKind;
 
-use lex::{lex, LexError, Token};
+use lex::{lex, LexError, TokenKind};
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -207,7 +207,7 @@ pub enum ParseError<'a> {
     LexError(LexError),
     ParseIntError(IntErrorKind),
     UnterminatedDirective,
-    UnexpectedToken(Token<'a>),
+    UnexpectedToken(TokenKind<'a>),
     UnexpectedEOF,
     UnknownDirective(&'a str),
     UnknownInstruction(&'a str),
@@ -218,10 +218,10 @@ macro_rules! expect {
     ($ti:expr, $t:expr) => {{
         match $ti.next() {
             Some(t) => {
-                if $t == t {
+                if $t == t.kind {
                     Ok(())
                 } else {
-                    Err(ParseError::UnexpectedToken(t))
+                    Err(ParseError::UnexpectedToken(t.kind))
                 }
             }
             None => Err(ParseError::UnexpectedEOF),
@@ -233,10 +233,10 @@ macro_rules! expect_ident {
     ($ti:expr) => {{
         match $ti.next() {
             Some(t) => {
-                if let Token::Ident(s) = t {
+                if let TokenKind::Ident(s) = t.kind {
                     Ok(s)
                 } else {
-                    Err(ParseError::UnexpectedToken(t))
+                    Err(ParseError::UnexpectedToken(t.kind))
                 }
             }
             None => Err(ParseError::UnexpectedEOF),
@@ -248,10 +248,10 @@ macro_rules! expect_literal {
     ($ti:expr) => {{
         match $ti.next() {
             Some(t) => {
-                if let Token::Literal(l) = t {
+                if let TokenKind::Literal(l) = t.kind {
                     Ok(l)
                 } else {
-                    Err(ParseError::UnexpectedToken(t))
+                    Err(ParseError::UnexpectedToken(t.kind))
                 }
             }
             None => Err(ParseError::UnexpectedEOF),
@@ -261,7 +261,7 @@ macro_rules! expect_literal {
 
 macro_rules! skip_whitespace {
     ($ti:expr) => {{
-        while let Some(Token::Whitespace) = $ti.peek() {
+        while let Some(&TokenKind::Whitespace) = $ti.peek().map(|t| &t.kind) {
             $ti.next();
         }
     }};
@@ -269,10 +269,10 @@ macro_rules! skip_whitespace {
 
 macro_rules! skip_at_least_one_whitespace {
     ($ti:expr) => {{
-        match $ti.peek() {
-            Some(Token::Whitespace) => Ok(skip_whitespace!($ti)),
+        match $ti.peek().map(|t| &t.kind) {
+            Some(TokenKind::Whitespace) => Ok(skip_whitespace!($ti)),
             None => Err(ParseError::UnexpectedEOF),
-            Some(_) => Err(ParseError::UnexpectedToken($ti.next().unwrap())),
+            Some(_) => Err(ParseError::UnexpectedToken($ti.next().unwrap().kind)),
         }
     }};
 }
@@ -289,42 +289,42 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
     let mut ti = lex(input)
         .map_err(ParseError::LexError)?
         .into_iter()
-        .filter(|t| match t {
-            Token::Comment(_) => false,
+        .filter(|t| match t.kind {
+            TokenKind::Comment(_) => false,
             _ => true,
         })
         .peekable();
 
     while let Some(t) = ti.next() {
-        match t {
-            Token::Dot => {
+        match t.kind {
+            TokenKind::Dot => {
                 let tn = ti.next().ok_or(ParseError::UnterminatedDirective)?;
                 if let Some(s) = cs.take() {
                     a.sections.push(s);
                 }
-                match tn {
-                    Token::Ident("data") => cs = Some(Section::Data(Vec::new())),
-                    Token::Ident("text") => cs = Some(Section::Text(Vec::new())),
-                    Token::Ident(d) => return Err(ParseError::UnknownDirective(d)),
-                    _ => return Err(ParseError::UnexpectedToken(tn)),
+                match tn.kind {
+                    TokenKind::Ident("data") => cs = Some(Section::Data(Vec::new())),
+                    TokenKind::Ident("text") => cs = Some(Section::Text(Vec::new())),
+                    TokenKind::Ident(d) => return Err(ParseError::UnknownDirective(d)),
+                    _ => return Err(ParseError::UnexpectedToken(tn.kind)),
                 }
                 skip_whitespace!(ti);
-                expect!(ti, Token::Newline)?;
+                expect!(ti, TokenKind::Newline)?;
             }
-            Token::Comma => todo!(),
-            Token::Colon => todo!(),
-            Token::OpenParen => todo!(),
-            Token::CloseParen => todo!(),
-            Token::Dollar => todo!(),
-            Token::Whitespace => {}
-            Token::Newline => {}
-            Token::Ident(i) => {
+            TokenKind::Comma => todo!(),
+            TokenKind::Colon => todo!(),
+            TokenKind::OpenParen => todo!(),
+            TokenKind::CloseParen => todo!(),
+            TokenKind::Dollar => todo!(),
+            TokenKind::Whitespace => {}
+            TokenKind::Newline => {}
+            TokenKind::Ident(i) => {
                 match cs.as_mut() {
                     Some(Section::Data(data)) => {
                         // It can only be a label
-                        expect!(ti, Token::Colon)?;
+                        expect!(ti, TokenKind::Colon)?;
                         skip_whitespace!(ti);
-                        expect!(ti, Token::Dot)?;
+                        expect!(ti, TokenKind::Dot)?;
                         let kind_str = expect_ident!(ti)?;
                         let kind: DataKind = DataKind::try_from(kind_str)
                             .or_else(|_| Err(ParseError::UnknownDataKind(kind_str)))?;
@@ -333,23 +333,23 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                             label: i,
                             value: DataDeclaration {
                                 kind,
-                                value: match ti.next().ok_or(ParseError::UnexpectedEOF)? {
-                                    Token::Dot => todo!(),
-                                    Token::Comma => todo!(),
-                                    Token::Colon => todo!(),
-                                    Token::OpenParen => todo!(),
-                                    Token::CloseParen => todo!(),
-                                    Token::Dollar => todo!(),
-                                    Token::Whitespace => todo!(),
-                                    Token::Newline => todo!(),
-                                    Token::Ident(_) => todo!(),
-                                    Token::Literal(Literal::Num(value)) => {
+                                value: match ti.next().ok_or(ParseError::UnexpectedEOF)?.kind {
+                                    TokenKind::Dot => todo!(),
+                                    TokenKind::Comma => todo!(),
+                                    TokenKind::Colon => todo!(),
+                                    TokenKind::OpenParen => todo!(),
+                                    TokenKind::CloseParen => todo!(),
+                                    TokenKind::Dollar => todo!(),
+                                    TokenKind::Whitespace => todo!(),
+                                    TokenKind::Newline => todo!(),
+                                    TokenKind::Ident(_) => todo!(),
+                                    TokenKind::Literal(Literal::Num(value)) => {
                                         skip_whitespace!(ti);
-                                        match ti.next() {
+                                        match ti.next().map(|t| t.kind) {
                                             None => todo!(),
-                                            Some(Token::Dot) => todo!(),
-                                            Some(Token::Comma) => todo!(),
-                                            Some(Token::Colon) => {
+                                            Some(TokenKind::Dot) => todo!(),
+                                            Some(TokenKind::Comma) => todo!(),
+                                            Some(TokenKind::Colon) => {
                                                 skip_whitespace!(ti);
                                                 match expect_literal!(ti)? {
                                                     Literal::Num(size) => {
@@ -360,21 +360,21 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                                     Literal::Str(_) => todo!(),
                                                 }
                                             }
-                                            Some(Token::OpenParen) => todo!(),
-                                            Some(Token::CloseParen) => todo!(),
-                                            Some(Token::Dollar) => todo!(),
-                                            Some(Token::Whitespace) => todo!(),
-                                            Some(Token::Newline) => DataValue::Int(value),
-                                            Some(Token::Ident(_)) => todo!(),
-                                            Some(Token::Literal(_)) => todo!(),
+                                            Some(TokenKind::OpenParen) => todo!(),
+                                            Some(TokenKind::CloseParen) => todo!(),
+                                            Some(TokenKind::Dollar) => todo!(),
+                                            Some(TokenKind::Whitespace) => todo!(),
+                                            Some(TokenKind::Newline) => DataValue::Int(value),
+                                            Some(TokenKind::Ident(_)) => todo!(),
+                                            Some(TokenKind::Literal(_)) => todo!(),
 
-                                            Some(Token::Comment(_)) => panic!(),
+                                            Some(TokenKind::Comment(_)) => panic!(),
                                         }
                                     }
-                                    Token::Literal(Literal::Char(_)) => todo!(),
-                                    Token::Literal(Literal::Str(s)) => DataValue::String(s),
+                                    TokenKind::Literal(Literal::Char(_)) => todo!(),
+                                    TokenKind::Literal(Literal::Str(s)) => DataValue::String(s),
 
-                                    Token::Comment(_) => panic!(),
+                                    TokenKind::Comment(_) => panic!(),
                                 },
                             },
                         })
@@ -382,7 +382,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                     Some(Section::Text(entries)) => {
                         // We might get a label or an instruction
 
-                        if Some(&Token::Colon) == ti.peek() {
+                        if Some(&TokenKind::Colon) == ti.peek().map(|t| &t.kind) {
                             // This is a label
                             ti.next().unwrap();
                             entries.push(Entry::Label(i))
@@ -394,69 +394,70 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                             };
 
                             skip_whitespace!(ti);
-                            match ti.next() {
-                                Some(Token::Newline) | None => {
+                            match ti.next().map(|t| t.kind) {
+                                Some(TokenKind::Newline) | None => {
                                     entries.push(Entry::Instruction(inst));
                                     continue;
                                 }
-                                Some(Token::Dollar) => {
+                                Some(TokenKind::Dollar) => {
                                     inst.arguments.push(Argument::Register(expect_ident!(ti)?))
                                 }
-                                Some(Token::Ident(i)) => {
+                                Some(TokenKind::Ident(i)) => {
                                     inst.arguments.push(Argument::Label(i));
                                 }
-                                Some(Token::Literal(l)) => {
+                                Some(TokenKind::Literal(l)) => {
                                     inst.arguments.push(Argument::Literal(l))
                                 }
-                                Some(Token::Dot) => todo!(),
-                                Some(Token::Comma) => todo!(),
-                                Some(Token::Colon) => todo!(),
-                                Some(Token::OpenParen) => todo!(),
-                                Some(Token::CloseParen) => todo!(),
-                                Some(Token::Whitespace) => todo!(),
+                                Some(TokenKind::Dot) => todo!(),
+                                Some(TokenKind::Comma) => todo!(),
+                                Some(TokenKind::Colon) => todo!(),
+                                Some(TokenKind::OpenParen) => todo!(),
+                                Some(TokenKind::CloseParen) => todo!(),
+                                Some(TokenKind::Whitespace) => todo!(),
 
-                                Some(Token::Comment(_)) => panic!(),
+                                Some(TokenKind::Comment(_)) => panic!(),
                             }
 
                             loop {
                                 skip_whitespace!(ti);
-                                match ti.next() {
-                                    Some(Token::Comma) => {} // Get next arg
-                                    Some(Token::Newline) | None => break,
+                                match ti.next().map(|t| t.kind) {
+                                    Some(TokenKind::Comma) => {} // Get next arg
+                                    Some(TokenKind::Newline) | None => break,
                                     Some(u) => return Err(ParseError::UnexpectedToken(u)),
                                 }
                                 skip_whitespace!(ti);
-                                match ti.next() {
-                                    Some(Token::Dollar) => {
+                                match ti.next().map(|t| t.kind) {
+                                    Some(TokenKind::Dollar) => {
                                         inst.arguments.push(Argument::Register(expect_ident!(ti)?));
                                     }
-                                    Some(Token::Ident(i)) => {
+                                    Some(TokenKind::Ident(i)) => {
                                         inst.arguments.push(Argument::Label(i));
                                     }
-                                    Some(Token::Literal(Literal::Num(nl))) => {
-                                        if Some(&Token::OpenParen) == ti.peek() {
+                                    Some(TokenKind::Literal(Literal::Num(nl))) => {
+                                        if Some(&TokenKind::OpenParen) == ti.peek().map(|t| &t.kind)
+                                        {
                                             ti.next().unwrap();
-                                            expect!(ti, Token::Dollar)?;
+                                            expect!(ti, TokenKind::Dollar)?;
                                             inst.arguments.push(Argument::OffsetRegister {
                                                 offset: nl,
                                                 register: expect_ident!(ti)?,
                                             });
-                                            expect!(ti, Token::CloseParen)?;
+                                            expect!(ti, TokenKind::CloseParen)?;
                                         } else {
                                             inst.arguments.push(Argument::Literal(Literal::Num(nl)))
                                         }
                                     }
-                                    Some(Token::Dot) => todo!(),
-                                    Some(Token::Comma) => todo!(),
-                                    Some(Token::Colon) => todo!(),
-                                    Some(Token::OpenParen) => todo!(),
-                                    Some(Token::CloseParen) => todo!(),
-                                    Some(Token::Whitespace) => todo!(),
-                                    Some(Token::Newline) => todo!(),
-                                    Some(Token::Literal(_)) => todo!(),
+                                    Some(TokenKind::Dot) => todo!(),
+                                    Some(TokenKind::Comma) => todo!(),
+                                    Some(TokenKind::Colon) => todo!(),
+                                    Some(TokenKind::OpenParen) => todo!(),
+                                    Some(TokenKind::CloseParen) => todo!(),
+                                    Some(TokenKind::Whitespace) => todo!(),
+                                    Some(TokenKind::Newline) => todo!(),
+                                    Some(TokenKind::Literal(_)) => todo!(),
                                     None => return Err(ParseError::UnexpectedEOF),
 
-                                    Some(Token::Comment(_)) => panic!(),
+                                    Some(TokenKind::Comment(_)) => panic!(),
                                 }
                             }
 
@@ -466,9 +467,9 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                     None => todo!(),
                 };
             }
-            Token::Literal(_) => todo!(),
+            TokenKind::Literal(_) => todo!(),
             // Shouldn't be possible because we're filtering out comments above
-            Token::Comment(_) => panic!(),
+            TokenKind::Comment(_) => panic!(),
         }
     }
     if let Some(s) = cs {

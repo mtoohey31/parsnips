@@ -4,7 +4,13 @@ use alloc::vec::Vec;
 use crate::{Literal, NumLiteral};
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Token<'a> {
+pub struct Token<'a> {
+    pub pos: usize,
+    pub kind: TokenKind<'a>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum TokenKind<'a> {
     Dot,
     Comma,
     Colon,
@@ -19,6 +25,12 @@ pub enum Token<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct LexError {
+    pub pos: usize,
+    pub kind: LexErrorKind,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum LexErrorKind {
     UnexpectedToken(char),
     InvalidCharEscape(char),
@@ -26,21 +38,6 @@ pub enum LexErrorKind {
     NonSingleChar,
     UnterminatedStr,
     UnterminatedNum,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct LexError {
-    pos: (usize, usize),
-    kind: LexErrorKind,
-}
-
-impl LexError {
-    fn at(point: usize, kind: LexErrorKind) -> Self {
-        Self {
-            pos: (point, point + 1),
-            kind,
-        }
-    }
 }
 
 macro_rules! failing_pos {
@@ -69,124 +66,196 @@ macro_rules! failing_pos {
 pub fn lex<'a>(input: &'a str) -> Result<Vec<Token<'a>>, LexError> {
     let mut ci = input.char_indices().peekable();
     let mut tokens = Vec::new();
-    'OUTER: while let Some((mut pos, mut c)) = ci.next() {
+    'OUTER: while let Some((pos, mut c)) = ci.next() {
         match c {
             '0'..='9' | '-' => {
                 let negative = c == '-';
+                let mut body_pos = pos;
                 if negative {
-                    (pos, c) = ci
-                        .next()
-                        .ok_or(LexError::at(pos, LexErrorKind::UnterminatedNum))?;
+                    (body_pos, c) = ci.next().ok_or(LexError {
+                        pos,
+                        kind: LexErrorKind::UnterminatedNum,
+                    })?;
                     if !matches!(c, '0'..='9') {
-                        return Err(LexError::at(pos, LexErrorKind::UnterminatedNum));
+                        return Err(LexError {
+                            pos: body_pos,
+                            kind: LexErrorKind::UnterminatedNum,
+                        });
                     }
                 }
-                tokens.push(Token::Literal(if c == '0' {
-                    match ci.peek() {
-                        Some((_, 'b')) => {
-                            ci.next().unwrap();
-                            Literal::Num(NumLiteral {
+                tokens.push(Token {
+                    pos,
+                    kind: TokenKind::Literal(if c == '0' {
+                        match ci.peek() {
+                            Some((_, 'b')) => {
+                                ci.next().unwrap();
+                                Literal::Num(NumLiteral {
+                                    negative,
+                                    radix: 2,
+                                    body: &input[body_pos + 2
+                                        ..failing_pos!(body_pos + 2, ci, is_binary_digit)],
+                                })
+                            }
+                            Some((_, 'o')) => {
+                                ci.next().unwrap();
+                                Literal::Num(NumLiteral {
+                                    negative,
+                                    radix: 8,
+                                    body: &input[body_pos + 2
+                                        ..failing_pos!(body_pos + 2, ci, is_octal_digit)],
+                                })
+                            }
+                            Some((_, 'x')) => {
+                                ci.next().unwrap();
+                                Literal::Num(NumLiteral {
+                                    negative,
+                                    radix: 16,
+                                    body: &input[body_pos + 2
+                                        ..failing_pos!(body_pos + 2, ci, is_hex_digit)],
+                                })
+                            }
+                            _ => Literal::Num(NumLiteral {
                                 negative,
-                                radix: 2,
-                                body: &input[pos + 2..failing_pos!(pos + 2, ci, is_binary_digit)],
-                            })
+                                radix: 10,
+                                body: &input
+                                    [body_pos..failing_pos!(body_pos, ci, is_decimal_digit)],
+                            }),
                         }
-                        Some((_, 'o')) => {
-                            ci.next().unwrap();
-                            Literal::Num(NumLiteral {
-                                negative,
-                                radix: 8,
-                                body: &input[pos + 2..failing_pos!(pos + 2, ci, is_octal_digit)],
-                            })
-                        }
-                        Some((_, 'x')) => {
-                            ci.next().unwrap();
-                            Literal::Num(NumLiteral {
-                                negative,
-                                radix: 16,
-                                body: &input[pos + 2..failing_pos!(pos + 2, ci, is_hex_digit)],
-                            })
-                        }
-                        _ => Literal::Num(NumLiteral {
+                    } else {
+                        Literal::Num(NumLiteral {
                             negative,
                             radix: 10,
-                            body: &input[pos..failing_pos!(pos, ci, is_decimal_digit)],
-                        }),
-                    }
-                } else {
-                    Literal::Num(NumLiteral {
-                        negative,
-                        radix: 10,
-                        body: &input[pos..failing_pos!(pos, ci, is_decimal_digit)],
-                    })
-                }));
+                            body: &input[body_pos..failing_pos!(body_pos, ci, is_decimal_digit)],
+                        })
+                    }),
+                });
             }
             '\'' => {
-                let (mut pos, res) = match ci.next() {
+                let res = match ci.next() {
                     Some((pos, '\\')) => match ci.next() {
-                        Some((pos, 't')) => (pos, Ok(Token::Literal(Literal::Char('\t')))),
-                        Some((pos, 'n')) => (pos, Ok(Token::Literal(Literal::Char('\n')))),
-                        Some((pos, '\\')) => (pos, Ok(Token::Literal(Literal::Char('\\')))),
-                        Some((pos, c)) => (
+                        Some((pos, 't')) => Token {
                             pos,
-                            Err(LexError::at(pos, LexErrorKind::InvalidCharEscape(c))),
-                        ),
-                        None => (
+                            kind: TokenKind::Literal(Literal::Char('\t')),
+                        },
+                        Some((pos, 'n')) => Token {
                             pos,
-                            Err(LexError::at(pos + 1, LexErrorKind::UnterminatedChar)),
-                        ),
+                            kind: TokenKind::Literal(Literal::Char('\n')),
+                        },
+                        Some((pos, '\\')) => Token {
+                            pos,
+                            kind: TokenKind::Literal(Literal::Char('\\')),
+                        },
+                        Some((pos, c)) => {
+                            return Err(LexError {
+                                pos,
+                                kind: LexErrorKind::InvalidCharEscape(c),
+                            })
+                        }
+                        None => {
+                            return Err(LexError {
+                                pos: pos + 1,
+                                kind: LexErrorKind::UnterminatedChar,
+                            })
+                        }
                     },
-                    Some((pos, c)) => (pos, Ok(Token::Literal(Literal::Char(c)))),
-                    None => (
+                    Some((pos, c)) => Token {
                         pos,
-                        Err(LexError::at(pos + 1, LexErrorKind::UnterminatedChar)),
-                    ),
+                        kind: TokenKind::Literal(Literal::Char(c)),
+                    },
+                    None => {
+                        return Err(LexError {
+                            pos: pos + 1,
+                            kind: LexErrorKind::UnterminatedChar,
+                        })
+                    }
                 };
-                (pos, c) = ci
-                    .next()
-                    .ok_or(LexError::at(pos, LexErrorKind::UnterminatedChar))?;
+                let (pos, c) = ci.next().ok_or(LexError {
+                    pos,
+                    kind: LexErrorKind::UnterminatedChar,
+                })?;
                 if c != '\'' {
-                    return Err(LexError::at(pos, LexErrorKind::NonSingleChar));
+                    return Err(LexError {
+                        pos,
+                        kind: LexErrorKind::NonSingleChar,
+                    });
                 };
-                tokens.push(res?);
+                tokens.push(res);
             }
             '"' => {
-                let p = pos;
-                while let Some((p, c)) = ci.next() {
+                while let Some((curr_pos, c)) = ci.next() {
                     match c {
                         '"' => {
-                            tokens.push(Token::Literal(Literal::Str(&input[pos + 1..p])));
+                            tokens.push(Token {
+                                pos,
+                                kind: TokenKind::Literal(Literal::Str(&input[pos + 1..curr_pos])),
+                            });
                             continue 'OUTER;
                         }
                         '\\' => {
-                            handle_escape(
-                                ci.next()
-                                    .ok_or(LexError::at(p, LexErrorKind::UnterminatedStr))?,
-                            )?;
+                            handle_escape(ci.next().ok_or(LexError {
+                                pos,
+                                kind: LexErrorKind::UnterminatedStr,
+                            })?)?;
                         }
                         _ => {}
                     }
                 }
-                return Err(LexError::at(p, LexErrorKind::UnterminatedStr));
+                return Err(LexError {
+                    pos,
+                    kind: LexErrorKind::UnterminatedStr,
+                });
             }
-            '#' => tokens.push(Token::Comment(
-                &input[pos + 1..failing_pos!(pos, ci, |c| !is_newline(c))],
-            )),
-            '.' => tokens.push(Token::Dot),
-            ',' => tokens.push(Token::Comma),
-            ':' => tokens.push(Token::Colon),
-            '(' => tokens.push(Token::OpenParen),
-            ')' => tokens.push(Token::CloseParen),
-            '$' => tokens.push(Token::Dollar),
-            '\n' | '\u{0085}' | '\u{2029}' => tokens.push(Token::Newline),
+            '#' => tokens.push(Token {
+                pos,
+                kind: TokenKind::Comment(
+                    &input[pos + 1..failing_pos!(pos, ci, |c| !is_newline(c))],
+                ),
+            }),
+            '.' => tokens.push(Token {
+                pos,
+                kind: TokenKind::Dot,
+            }),
+            ',' => tokens.push(Token {
+                pos,
+                kind: TokenKind::Comma,
+            }),
+            ':' => tokens.push(Token {
+                pos,
+                kind: TokenKind::Colon,
+            }),
+            '(' => tokens.push(Token {
+                pos,
+                kind: TokenKind::OpenParen,
+            }),
+            ')' => tokens.push(Token {
+                pos,
+                kind: TokenKind::CloseParen,
+            }),
+            '$' => tokens.push(Token {
+                pos,
+                kind: TokenKind::Dollar,
+            }),
+            '\n' | '\u{0085}' | '\u{2029}' => tokens.push(Token {
+                pos,
+                kind: TokenKind::Newline,
+            }),
 
-            c if is_whitespace(c) => tokens.push(Token::Whitespace),
+            c if is_whitespace(c) => tokens.push(Token {
+                pos,
+                kind: TokenKind::Whitespace,
+            }),
 
-            c if is_ident_start(c) => {
-                tokens.push(Token::Ident(&input[pos..failing_pos!(pos, ci, is_ident)]))
+            c if is_ident_start(c) => tokens.push(Token {
+                pos,
+                kind: TokenKind::Ident(&input[pos..failing_pos!(pos, ci, is_ident)]),
+            }),
+
+            _ => {
+                return Err(LexError {
+                    pos,
+                    kind: LexErrorKind::UnexpectedToken(c),
+                })
             }
-
-            _ => return Err(LexError::at(pos, LexErrorKind::UnexpectedToken(c))),
         };
     }
     Ok(tokens)
@@ -251,7 +320,10 @@ fn handle_escape((pos, c): (usize, char)) -> Result<char, LexError> {
         't' => Ok('\t'),
         'n' => Ok('\n'),
         '\\' => Ok('\\'),
-        c => Err(LexError::at(pos, LexErrorKind::InvalidCharEscape(c))),
+        c => Err(LexError {
+            pos,
+            kind: LexErrorKind::InvalidCharEscape(c),
+        }),
     }
 }
 
@@ -268,48 +340,141 @@ mod tests {
             lex(include_str!("../../test/basic.asm"))
                 .unwrap()
                 .into_iter()
-                .filter(|t| *t != Token::Whitespace)
+                .filter(|t| t.kind != TokenKind::Whitespace)
                 .collect::<Vec<_>>(),
             vec![
-                Token::Dot,
-                Token::Ident("text"),
-                Token::Newline,
-                Token::Ident("addi"),
-                Token::Dollar,
-                Token::Ident("t0"),
-                Token::Comma,
-                Token::Dollar,
-                Token::Ident("zero"),
-                Token::Comma,
-                Token::Literal(Literal::Num(NumLiteral {
-                    negative: false,
-                    radix: 10,
-                    body: "13"
-                })),
-                Token::Newline,
-                Token::Ident("addi"),
-                Token::Dollar,
-                Token::Ident("t1"),
-                Token::Comma,
-                Token::Dollar,
-                Token::Ident("zero"),
-                Token::Comma,
-                Token::Literal(Literal::Num(NumLiteral {
-                    negative: false,
-                    radix: 10,
-                    body: "26"
-                })),
-                Token::Newline,
-                Token::Ident("add"),
-                Token::Dollar,
-                Token::Ident("t2"),
-                Token::Comma,
-                Token::Dollar,
-                Token::Ident("t0"),
-                Token::Comma,
-                Token::Dollar,
-                Token::Ident("t1"),
-                Token::Newline,
+                Token {
+                    pos: 6,
+                    kind: TokenKind::Dot
+                },
+                Token {
+                    pos: 7,
+                    kind: TokenKind::Ident("text")
+                },
+                Token {
+                    pos: 11,
+                    kind: TokenKind::Newline
+                },
+                Token {
+                    pos: 18,
+                    kind: TokenKind::Ident("addi")
+                },
+                Token {
+                    pos: 23,
+                    kind: TokenKind::Dollar
+                },
+                Token {
+                    pos: 24,
+                    kind: TokenKind::Ident("t0")
+                },
+                Token {
+                    pos: 26,
+                    kind: TokenKind::Comma
+                },
+                Token {
+                    pos: 28,
+                    kind: TokenKind::Dollar
+                },
+                Token {
+                    pos: 29,
+                    kind: TokenKind::Ident("zero")
+                },
+                Token {
+                    pos: 33,
+                    kind: TokenKind::Comma
+                },
+                Token {
+                    pos: 35,
+                    kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                        negative: false,
+                        radix: 10,
+                        body: "13"
+                    }))
+                },
+                Token {
+                    pos: 37,
+                    kind: TokenKind::Newline
+                },
+                Token {
+                    pos: 44,
+                    kind: TokenKind::Ident("addi")
+                },
+                Token {
+                    pos: 49,
+                    kind: TokenKind::Dollar
+                },
+                Token {
+                    pos: 50,
+                    kind: TokenKind::Ident("t1")
+                },
+                Token {
+                    pos: 52,
+                    kind: TokenKind::Comma
+                },
+                Token {
+                    pos: 54,
+                    kind: TokenKind::Dollar
+                },
+                Token {
+                    pos: 55,
+                    kind: TokenKind::Ident("zero")
+                },
+                Token {
+                    pos: 59,
+                    kind: TokenKind::Comma
+                },
+                Token {
+                    pos: 61,
+                    kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                        negative: false,
+                        radix: 10,
+                        body: "26"
+                    }))
+                },
+                Token {
+                    pos: 63,
+                    kind: TokenKind::Newline
+                },
+                Token {
+                    pos: 70,
+                    kind: TokenKind::Ident("add")
+                },
+                Token {
+                    pos: 74,
+                    kind: TokenKind::Dollar
+                },
+                Token {
+                    pos: 75,
+                    kind: TokenKind::Ident("t2")
+                },
+                Token {
+                    pos: 77,
+                    kind: TokenKind::Comma
+                },
+                Token {
+                    pos: 79,
+                    kind: TokenKind::Dollar
+                },
+                Token {
+                    pos: 80,
+                    kind: TokenKind::Ident("t0")
+                },
+                Token {
+                    pos: 82,
+                    kind: TokenKind::Comma
+                },
+                Token {
+                    pos: 84,
+                    kind: TokenKind::Dollar
+                },
+                Token {
+                    pos: 85,
+                    kind: TokenKind::Ident("t1")
+                },
+                Token {
+                    pos: 87,
+                    kind: TokenKind::Newline
+                },
             ]
         )
     }
@@ -318,7 +483,10 @@ mod tests {
     fn comment() {
         assert_eq!(
             lex("# a comment").unwrap(),
-            vec![Token::Comment(" a comment")]
+            vec![Token {
+                pos: 0,
+                kind: TokenKind::Comment(" a comment")
+            }]
         )
     }
 
@@ -326,11 +494,14 @@ mod tests {
     fn int() {
         assert_eq!(
             lex("-5894").unwrap(),
-            vec![Token::Literal(Literal::Num(NumLiteral {
-                negative: true,
-                radix: 10,
-                body: "5894"
-            }))]
+            vec![Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: true,
+                    radix: 10,
+                    body: "5894"
+                }))
+            }]
         )
     }
 
@@ -338,11 +509,14 @@ mod tests {
     fn uint() {
         assert_eq!(
             lex("5894").unwrap(),
-            vec![Token::Literal(Literal::Num(NumLiteral {
-                negative: false,
-                radix: 10,
-                body: "5894"
-            }))]
+            vec![Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: false,
+                    radix: 10,
+                    body: "5894"
+                }))
+            }]
         )
     }
 
@@ -350,11 +524,14 @@ mod tests {
     fn negative_overflow() {
         assert_eq!(
             lex("-584654654654654654694").unwrap(),
-            vec![Token::Literal(Literal::Num(NumLiteral {
-                negative: true,
-                radix: 10,
-                body: "584654654654654654694"
-            }))]
+            vec![Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: true,
+                    radix: 10,
+                    body: "584654654654654654694"
+                }))
+            }]
         )
     }
 
@@ -362,11 +539,14 @@ mod tests {
     fn positive_overflow() {
         assert_eq!(
             lex("584654654654654654694").unwrap(),
-            vec![Token::Literal(Literal::Num(NumLiteral {
-                negative: false,
-                radix: 10,
-                body: "584654654654654654694"
-            }))]
+            vec![Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: false,
+                    radix: 10,
+                    body: "584654654654654654694"
+                }))
+            }]
         )
     }
 
@@ -374,11 +554,14 @@ mod tests {
     fn binary() {
         assert_eq!(
             lex("-0b0100").unwrap(),
-            vec![Token::Literal(Literal::Num(NumLiteral {
-                negative: true,
-                radix: 2,
-                body: "0100"
-            }))]
+            vec![Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: true,
+                    radix: 2,
+                    body: "0100"
+                }))
+            }]
         )
     }
 
@@ -386,11 +569,14 @@ mod tests {
     fn ocatal() {
         assert_eq!(
             lex("-0o0700").unwrap(),
-            vec![Token::Literal(Literal::Num(NumLiteral {
-                negative: true,
-                radix: 8,
-                body: "0700"
-            }))]
+            vec![Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: true,
+                    radix: 8,
+                    body: "0700"
+                }))
+            }]
         )
     }
 
@@ -398,11 +584,14 @@ mod tests {
     fn hex() {
         assert_eq!(
             lex("-0x0AbE").unwrap(),
-            vec![Token::Literal(Literal::Num(NumLiteral {
-                negative: true,
-                radix: 16,
-                body: "0AbE"
-            }))]
+            vec![Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: true,
+                    radix: 16,
+                    body: "0AbE"
+                }))
+            }]
         )
     }
 
@@ -410,12 +599,21 @@ mod tests {
     fn string_simple() {
         assert_eq!(
             lex("\"a string\"").unwrap(),
-            vec![Token::Literal(Literal::Str("a string"))]
+            vec![Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Str("a string"))
+            }]
         )
     }
 
     #[test]
     fn dot_ident() {
-        assert_eq!(lex("add.d").unwrap(), vec![Token::Ident("add.d")])
+        assert_eq!(
+            lex("add.d").unwrap(),
+            vec![Token {
+                pos: 0,
+                kind: TokenKind::Ident("add.d")
+            }]
+        )
     }
 }
