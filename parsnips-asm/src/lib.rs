@@ -300,9 +300,12 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                     })?
                                     .as_bytes();
                                 program.extend_from_slice(str_bytes);
-                                // TODO: revisit this, is this how other things do this?
-                                // Ensure word alignment is preserved
-                                for _ in 0..4 - (str_bytes.len() % 4) {
+                                // ensure word alignment is preserved for whatever comes next
+                                let mut padding_len = 4 - str_bytes.len() % 4;
+                                if padding_len == 4 {
+                                    padding_len = 0
+                                };
+                                for _ in 0..padding_len {
                                     program.push(0);
                                 }
                             }
