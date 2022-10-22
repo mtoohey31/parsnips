@@ -181,6 +181,10 @@ pub fn lex<'a>(input: &'a str) -> Result<Vec<Token<'a>>, LexError> {
                 tokens.push(res);
             }
             '"' => {
+                // we don't verify the integrity of character escapes for things such as '\t' and
+                // '\n' here, because we'll have to do that when actually unescaping the string
+                // anyways. we don't unescape the string here either, because a lexer isn't really
+                // the right place for that, and it would force us to create copied, owned strings.
                 while let Some((curr_pos, c)) = ci.next() {
                     match c {
                         '"' => {
@@ -191,10 +195,8 @@ pub fn lex<'a>(input: &'a str) -> Result<Vec<Token<'a>>, LexError> {
                             continue 'OUTER;
                         }
                         '\\' => {
-                            handle_escape(ci.next().ok_or(LexError {
-                                pos,
-                                kind: LexErrorKind::UnterminatedStr,
-                            })?)?;
+                            // make sure we don't end the string after a \"
+                            ci.next();
                         }
                         _ => {}
                     }
@@ -308,19 +310,6 @@ fn is_ident_start(c: char) -> bool {
 #[inline(always)]
 fn is_ident(c: char) -> bool {
     is_ident_start(c) || is_decimal_digit(c) || c == '.'
-}
-
-#[inline(always)]
-fn handle_escape((pos, c): (usize, char)) -> Result<char, LexError> {
-    match c {
-        't' => Ok('\t'),
-        'n' => Ok('\n'),
-        '\\' => Ok('\\'),
-        c => Err(LexError {
-            pos,
-            kind: LexErrorKind::InvalidCharEscape(c),
-        }),
-    }
 }
 
 #[cfg(test)]

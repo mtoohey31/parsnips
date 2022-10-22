@@ -7,7 +7,7 @@ use parsnips_parser::{
 };
 
 extern crate alloc;
-use alloc::vec::Vec;
+use alloc::{string::String, vec::Vec};
 use ascii::{AsAsciiStr, AsAsciiStrError};
 use core::num::IntErrorKind;
 use hashbrown::HashMap;
@@ -105,6 +105,7 @@ pub enum AssembleErrorKind<'a> {
     InvalidDestination,
     MisalignedOffset(u16),
     NoText,
+    InvalidStrEscape(char),
     NonAsciiStr(AsAsciiStrError),
     OverflowingShamt(NumLiteral<'a>),
     OverflowingLabelReference(u32),
@@ -262,8 +263,35 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                         DataKind::Ascii => todo!(),
                         DataKind::Asciiz => match entry.value.value {
                             DataValue::String(value) => {
-                                // TODO: replace escapes better
-                                let unescaped = value.replace("\\n", "\n");
+                                let mut unescaped = String::new();
+                                let mut ci = value.chars().enumerate();
+                                while let Some((pos, c)) = ci.next() {
+                                    unescaped.push(match c {
+                                        '\\' => match ci.next() {
+                                            Some((_, 't')) => '\t',
+                                            Some((_, 'n')) => '\n',
+                                            Some((_, '\\')) => '\\',
+                                            Some((_, c)) => {
+                                                return Err(AssembleError {
+                                                    pos,
+                                                    kind: AssembleErrorKind::InvalidStrEscape(c),
+                                                })
+                                            }
+                                            None => {
+                                                // this error maybe isn't really the most
+                                                // appropriate thing for this case, but this error
+                                                // case shouldn't occur with a well-formed AST
+                                                // produced by lex and parse anyways so...
+                                                return Err(AssembleError {
+                                                    pos: pos + 1,
+                                                    kind: AssembleErrorKind::InvalidStrEscape(c),
+                                                });
+                                            }
+                                        },
+                                        o => o,
+                                    })
+                                }
+
                                 let str_bytes = unescaped
                                     .as_ascii_str()
                                     .map_err(|e| AssembleError {
