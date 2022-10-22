@@ -8,11 +8,11 @@ all: check-fmt test build
 
 .PHONY: check-fmt
 check-fmt:
-	rustfmt --check $$(find . -name '*.rs')
+	rustfmt --check $$(find . \( -name target -prune -false \) -o -name '*.rs')
 
 .PHONY: fmt
 fmt:
-	rustfmt $$(find . -name '*.rs')
+	rustfmt $$(find . \( -name target -prune -false \) -o -name '*.rs')
 
 .PHONY: test
 test: test-parser test-asm test-emu test-web
