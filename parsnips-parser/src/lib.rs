@@ -49,7 +49,10 @@ pub enum EntryKind<'a> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Instruction<'a> {
     pub name: &'a str,
-    pub arguments: Vec<Argument<'a>>,
+    pub args: Vec<Argument<'a>>,
+    // the position of the final newline, or the EOF, which is needed for showing errors when
+    // arguments are missing
+    pub end_pos: usize,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -483,19 +486,22 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                 kind: EntryKind::Label(i),
                             })
                         } else {
+                            let entry_pos = t.pos;
                             // This is an instruction
-                            let mut inst = Instruction {
-                                name: i,
-                                arguments: Vec::new(),
-                            };
+                            let name = i;
+                            let mut args = Vec::new();
 
                             let pos = skip_whitespace!(ti, t.pos);
                             let tn = match ti.next() {
                                 Some(t) => t,
                                 None => {
                                     entries.push(Entry {
-                                        pos: t.pos,
-                                        kind: EntryKind::Instruction(inst),
+                                        pos: entry_pos,
+                                        kind: EntryKind::Instruction(Instruction {
+                                            name,
+                                            args,
+                                            end_pos: pos,
+                                        }),
                                     });
                                     continue;
                                 }
@@ -503,22 +509,26 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                             match tn.kind {
                                 TokenKind::Newline => {
                                     entries.push(Entry {
-                                        pos: t.pos,
-                                        kind: EntryKind::Instruction(inst),
+                                        pos: entry_pos,
+                                        kind: EntryKind::Instruction(Instruction {
+                                            name,
+                                            args,
+                                            end_pos: tn.pos,
+                                        }),
                                     });
                                     continue;
                                 }
-                                TokenKind::Dollar => inst.arguments.push(Argument {
+                                TokenKind::Dollar => args.push(Argument {
                                     pos: tn.pos,
                                     kind: ArgumentKind::Register(expect_ident!(ti, tn.pos)?.0),
                                 }),
                                 TokenKind::Ident(i) => {
-                                    inst.arguments.push(Argument {
+                                    args.push(Argument {
                                         pos: tn.pos,
                                         kind: ArgumentKind::Label(i),
                                     });
                                 }
-                                TokenKind::Literal(l) => inst.arguments.push(Argument {
+                                TokenKind::Literal(l) => args.push(Argument {
                                     pos: tn.pos,
                                     kind: ArgumentKind::Literal(l),
                                 }),
@@ -535,12 +545,30 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                 let t = match ti.next() {
                                     Some(t) => t,
                                     None => {
+                                        entries.push(Entry {
+                                            pos: entry_pos,
+                                            kind: EntryKind::Instruction(Instruction {
+                                                name,
+                                                args,
+                                                end_pos: pos,
+                                            }),
+                                        });
                                         break;
                                     }
                                 };
                                 match t.kind {
                                     TokenKind::Comma => {} // Get next arg
-                                    TokenKind::Newline => break,
+                                    TokenKind::Newline => {
+                                        entries.push(Entry {
+                                            pos: entry_pos,
+                                            kind: EntryKind::Instruction(Instruction {
+                                                name,
+                                                args,
+                                                end_pos: t.pos,
+                                            }),
+                                        });
+                                        break;
+                                    }
                                     u => {
                                         return Err(ParseError {
                                             pos,
@@ -561,7 +589,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                 };
                                 match t.kind {
                                     TokenKind::Dollar => {
-                                        inst.arguments.push(Argument {
+                                        args.push(Argument {
                                             pos: t.pos,
                                             kind: ArgumentKind::Register(
                                                 expect_ident!(ti, t.pos)?.0,
@@ -569,7 +597,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                         });
                                     }
                                     TokenKind::Ident(i) => {
-                                        inst.arguments.push(Argument {
+                                        args.push(Argument {
                                             pos: t.pos,
                                             kind: ArgumentKind::Label(i),
                                         });
@@ -580,7 +608,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                             let Token { pos, .. } = ti.next().unwrap();
                                             expect!(ti, TokenKind::Dollar, pos)?;
                                             let (register, ident_pos) = expect_ident!(ti, pos + 1)?;
-                                            inst.arguments.push(Argument {
+                                            args.push(Argument {
                                                 pos: t.pos,
                                                 kind: ArgumentKind::OffsetRegister {
                                                     offset: nl,
@@ -590,7 +618,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                             });
                                             expect!(ti, TokenKind::CloseParen, ident_pos)?;
                                         } else {
-                                            inst.arguments.push(Argument {
+                                            args.push(Argument {
                                                 pos: t.pos,
                                                 kind: ArgumentKind::Literal(Literal::Num(nl)),
                                             })
@@ -606,11 +634,6 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                     TokenKind::Literal(_) => todo!(),
                                 }
                             }
-
-                            entries.push(Entry {
-                                pos: t.pos,
-                                kind: EntryKind::Instruction(inst),
-                            });
                         }
                     }
                 };
@@ -642,7 +665,7 @@ mod tests {
                             pos: 18,
                             kind: EntryKind::Instruction(Instruction {
                                 name: "addi",
-                                arguments: vec![
+                                args: vec![
                                     Argument {
                                         pos: 23,
                                         kind: ArgumentKind::Register("t0")
@@ -660,13 +683,14 @@ mod tests {
                                         }))
                                     }
                                 ],
+                                end_pos: 37,
                             })
                         },
                         Entry {
                             pos: 44,
                             kind: EntryKind::Instruction(Instruction {
                                 name: "addi",
-                                arguments: vec![
+                                args: vec![
                                     Argument {
                                         pos: 49,
                                         kind: ArgumentKind::Register("t1")
@@ -684,13 +708,14 @@ mod tests {
                                         }))
                                     }
                                 ],
+                                end_pos: 63,
                             })
                         },
                         Entry {
                             pos: 70,
                             kind: EntryKind::Instruction(Instruction {
                                 name: "add",
-                                arguments: vec![
+                                args: vec![
                                     Argument {
                                         pos: 74,
                                         kind: ArgumentKind::Register("t2")
@@ -704,6 +729,7 @@ mod tests {
                                         kind: ArgumentKind::Register("t1")
                                     }
                                 ],
+                                end_pos: 87,
                             })
                         }
                     ])
@@ -766,7 +792,7 @@ mod tests {
                                 pos: 281,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "la",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 286,
                                             kind: ArgumentKind::Register("t0")
@@ -775,14 +801,15 @@ mod tests {
                                             pos: 291,
                                             kind: ArgumentKind::Label("fibs")
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 326,
                                 })
                             },
                             Entry {
                                 pos: 333,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "la",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 338,
                                             kind: ArgumentKind::Register("t5")
@@ -791,14 +818,15 @@ mod tests {
                                             pos: 343,
                                             kind: ArgumentKind::Label("size")
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 386,
                                 })
                             },
                             Entry {
                                 pos: 393,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "lw",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 398,
                                             kind: ArgumentKind::Register("t5")
@@ -815,14 +843,15 @@ mod tests {
                                                 register: "t5"
                                             }
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 432,
                                 })
                             },
                             Entry {
                                 pos: 439,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "li",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 444,
                                             kind: ArgumentKind::Register("t2")
@@ -835,14 +864,15 @@ mod tests {
                                                 body: "1"
                                             }))
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 496,
                                 })
                             },
                             Entry {
                                 pos: 503,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "sw",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 508,
                                             kind: ArgumentKind::Register("t2")
@@ -859,14 +889,15 @@ mod tests {
                                                 register: "t0"
                                             }
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 535,
                                 })
                             },
                             Entry {
                                 pos: 542,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "sw",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 547,
                                             kind: ArgumentKind::Register("t2")
@@ -883,14 +914,15 @@ mod tests {
                                                 register: "t0"
                                             }
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 581,
                                 })
                             },
                             Entry {
                                 pos: 588,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "addi",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 593,
                                             kind: ArgumentKind::Register("t1")
@@ -907,7 +939,8 @@ mod tests {
                                                 body: "2"
                                             }))
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 657,
                                 })
                             },
                             Entry {
@@ -918,7 +951,7 @@ mod tests {
                                 pos: 664,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "lw",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 669,
                                             kind: ArgumentKind::Register("t3")
@@ -935,14 +968,15 @@ mod tests {
                                                 register: "t0"
                                             }
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 714,
                                 })
                             },
                             Entry {
                                 pos: 721,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "lw",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 726,
                                             kind: ArgumentKind::Register("t4")
@@ -959,14 +993,15 @@ mod tests {
                                                 register: "t0"
                                             }
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 772,
                                 })
                             },
                             Entry {
                                 pos: 779,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "add",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 784,
                                             kind: ArgumentKind::Register("t2")
@@ -979,14 +1014,15 @@ mod tests {
                                             pos: 794,
                                             kind: ArgumentKind::Register("t4")
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 822,
                                 })
                             },
                             Entry {
                                 pos: 829,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "sw",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 834,
                                             kind: ArgumentKind::Register("t2")
@@ -1003,14 +1039,15 @@ mod tests {
                                                 register: "t0"
                                             }
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 890,
                                 })
                             },
                             Entry {
                                 pos: 897,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "addi",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 902,
                                             kind: ArgumentKind::Register("t0")
@@ -1027,14 +1064,15 @@ mod tests {
                                                 body: "4"
                                             }))
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 960,
                                 })
                             },
                             Entry {
                                 pos: 967,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "addi",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 972,
                                             kind: ArgumentKind::Register("t1")
@@ -1051,14 +1089,15 @@ mod tests {
                                                 body: "1"
                                             }))
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 1013,
                                 })
                             },
                             Entry {
                                 pos: 1020,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "bgtz",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 1025,
                                             kind: ArgumentKind::Register("t1")
@@ -1067,14 +1106,15 @@ mod tests {
                                             pos: 1030,
                                             kind: ArgumentKind::Label("loop")
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 1071,
                                 })
                             },
                             Entry {
                                 pos: 1078,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "la",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 1083,
                                             kind: ArgumentKind::Register("a0")
@@ -1083,14 +1123,15 @@ mod tests {
                                             pos: 1088,
                                             kind: ArgumentKind::Label("fibs")
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 1134,
                                 })
                             },
                             Entry {
                                 pos: 1141,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "add",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 1146,
                                             kind: ArgumentKind::Register("a1")
@@ -1103,24 +1144,26 @@ mod tests {
                                             pos: 1158,
                                             kind: ArgumentKind::Register("t5")
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 1197,
                                 })
                             },
                             Entry {
                                 pos: 1204,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "jal",
-                                    arguments: vec![Argument {
+                                    args: vec![Argument {
                                         pos: 1209,
                                         kind: ArgumentKind::Label("print")
-                                    }]
+                                    }],
+                                    end_pos: 1248,
                                 })
                             },
                             Entry {
                                 pos: 1255,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "li",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 1260,
                                             kind: ArgumentKind::Register("v0")
@@ -1133,14 +1176,16 @@ mod tests {
                                                 body: "10"
                                             }))
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 1299,
                                 })
                             },
                             Entry {
                                 pos: 1306,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "syscall",
-                                    arguments: vec![]
+                                    args: vec![],
+                                    end_pos: 1349,
                                 })
                             }
                         ])
@@ -1181,7 +1226,7 @@ mod tests {
                                 pos: 1546,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "add",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 1551,
                                             kind: ArgumentKind::Register("t0")
@@ -1194,14 +1239,15 @@ mod tests {
                                             pos: 1563,
                                             kind: ArgumentKind::Register("a0")
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 1595,
                                 })
                             },
                             Entry {
                                 pos: 1602,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "add",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 1607,
                                             kind: ArgumentKind::Register("t1")
@@ -1214,14 +1260,15 @@ mod tests {
                                             pos: 1619,
                                             kind: ArgumentKind::Register("a1")
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 1663,
                                 })
                             },
                             Entry {
                                 pos: 1670,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "la",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 1675,
                                             kind: ArgumentKind::Register("a0")
@@ -1230,14 +1277,15 @@ mod tests {
                                             pos: 1680,
                                             kind: ArgumentKind::Label("head")
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 1723,
                                 })
                             },
                             Entry {
                                 pos: 1730,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "li",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 1735,
                                             kind: ArgumentKind::Register("v0")
@@ -1250,14 +1298,16 @@ mod tests {
                                                 body: "4"
                                             }))
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 1782,
                                 })
                             },
                             Entry {
                                 pos: 1789,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "syscall",
-                                    arguments: vec![]
+                                    args: vec![],
+                                    end_pos: 1826,
                                 })
                             },
                             Entry {
@@ -1268,7 +1318,7 @@ mod tests {
                                 pos: 1833,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "lw",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 1838,
                                             kind: ArgumentKind::Register("a0")
@@ -1285,14 +1335,15 @@ mod tests {
                                                 register: "t0"
                                             }
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 1890,
                                 })
                             },
                             Entry {
                                 pos: 1897,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "li",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 1902,
                                             kind: ArgumentKind::Register("v0")
@@ -1305,21 +1356,23 @@ mod tests {
                                                 body: "1"
                                             }))
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 1950,
                                 })
                             },
                             Entry {
                                 pos: 1957,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "syscall",
-                                    arguments: vec![]
+                                    args: vec![],
+                                    end_pos: 2003,
                                 })
                             },
                             Entry {
                                 pos: 2010,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "la",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 2015,
                                             kind: ArgumentKind::Register("a0")
@@ -1328,14 +1381,15 @@ mod tests {
                                             pos: 2020,
                                             kind: ArgumentKind::Label("space")
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 2068,
                                 })
                             },
                             Entry {
                                 pos: 2075,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "li",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 2080,
                                             kind: ArgumentKind::Register("v0")
@@ -1348,21 +1402,23 @@ mod tests {
                                                 body: "4"
                                             }))
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 2127,
                                 })
                             },
                             Entry {
                                 pos: 2134,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "syscall",
-                                    arguments: vec![]
+                                    args: vec![],
+                                    end_pos: 2171,
                                 })
                             },
                             Entry {
                                 pos: 2178,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "addi",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 2183,
                                             kind: ArgumentKind::Register("t0")
@@ -1379,14 +1435,15 @@ mod tests {
                                                 body: "4"
                                             }))
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 2219,
                                 })
                             },
                             Entry {
                                 pos: 2226,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "addi",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 2231,
                                             kind: ArgumentKind::Register("t1")
@@ -1403,14 +1460,15 @@ mod tests {
                                                 body: "1"
                                             }))
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 2272,
                                 })
                             },
                             Entry {
                                 pos: 2279,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "bgtz",
-                                    arguments: vec![
+                                    args: vec![
                                         Argument {
                                             pos: 2284,
                                             kind: ArgumentKind::Register("t1")
@@ -1419,17 +1477,19 @@ mod tests {
                                             pos: 2289,
                                             kind: ArgumentKind::Label("out")
                                         }
-                                    ]
+                                    ],
+                                    end_pos: 2325,
                                 })
                             },
                             Entry {
                                 pos: 2332,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "jr",
-                                    arguments: vec![Argument {
+                                    args: vec![Argument {
                                         pos: 2337,
                                         kind: ArgumentKind::Register("ra")
-                                    }]
+                                    }],
+                                    end_pos: 2362,
                                 })
                             }
                         ])

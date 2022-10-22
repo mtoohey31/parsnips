@@ -252,7 +252,8 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                         }
                         EntryKind::Instruction(Instruction {
                             name,
-                            mut arguments,
+                            args: mut arguments,
+                            ..
                         }) => {
                             if let Ok(op) = Op::try_from(name) {
                                 let inst = match op {
