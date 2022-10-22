@@ -53,7 +53,13 @@ pub struct Instruction<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Argument<'a> {
+pub struct Argument<'a> {
+    pub pos: usize,
+    pub kind: ArgumentKind<'a>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ArgumentKind<'a> {
     Register(&'a str),
     OffsetRegister {
         offset: NumLiteral<'a>,
@@ -501,13 +507,20 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                     });
                                     continue;
                                 }
-                                TokenKind::Dollar => inst
-                                    .arguments
-                                    .push(Argument::Register(expect_ident!(ti, tn.pos)?.1)),
+                                TokenKind::Dollar => inst.arguments.push(Argument {
+                                    pos: tn.pos,
+                                    kind: ArgumentKind::Register(expect_ident!(ti, tn.pos)?.1),
+                                }),
                                 TokenKind::Ident(i) => {
-                                    inst.arguments.push(Argument::Label(i));
+                                    inst.arguments.push(Argument {
+                                        pos: tn.pos,
+                                        kind: ArgumentKind::Label(i),
+                                    });
                                 }
-                                TokenKind::Literal(l) => inst.arguments.push(Argument::Literal(l)),
+                                TokenKind::Literal(l) => inst.arguments.push(Argument {
+                                    pos: tn.pos,
+                                    kind: ArgumentKind::Literal(l),
+                                }),
                                 TokenKind::Dot => todo!(),
                                 TokenKind::Comma => todo!(),
                                 TokenKind::Colon => todo!(),
@@ -549,11 +562,18 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                 };
                                 match t.kind {
                                     TokenKind::Dollar => {
-                                        inst.arguments
-                                            .push(Argument::Register(expect_ident!(ti, t.pos)?.1));
+                                        inst.arguments.push(Argument {
+                                            pos: t.pos,
+                                            kind: ArgumentKind::Register(
+                                                expect_ident!(ti, t.pos)?.1,
+                                            ),
+                                        });
                                     }
                                     TokenKind::Ident(i) => {
-                                        inst.arguments.push(Argument::Label(i));
+                                        inst.arguments.push(Argument {
+                                            pos: t.pos,
+                                            kind: ArgumentKind::Label(i),
+                                        });
                                     }
                                     TokenKind::Literal(Literal::Num(nl)) => {
                                         if Some(&TokenKind::OpenParen) == ti.peek().map(|t| &t.kind)
@@ -561,13 +581,19 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                             let Token { pos, .. } = ti.next().unwrap();
                                             expect!(ti, TokenKind::Dollar, pos)?;
                                             let (pos, register) = expect_ident!(ti, pos + 1)?;
-                                            inst.arguments.push(Argument::OffsetRegister {
-                                                offset: nl,
-                                                register,
+                                            inst.arguments.push(Argument {
+                                                pos: t.pos,
+                                                kind: ArgumentKind::OffsetRegister {
+                                                    offset: nl,
+                                                    register,
+                                                },
                                             });
                                             expect!(ti, TokenKind::CloseParen, pos)?;
                                         } else {
-                                            inst.arguments.push(Argument::Literal(Literal::Num(nl)))
+                                            inst.arguments.push(Argument {
+                                                pos: t.pos,
+                                                kind: ArgumentKind::Literal(Literal::Num(nl)),
+                                            })
                                         }
                                     }
                                     TokenKind::Dot => todo!(),
@@ -621,13 +647,22 @@ mod tests {
                             kind: EntryKind::Instruction(Instruction {
                                 name: "addi",
                                 arguments: vec![
-                                    Argument::Register("t0"),
-                                    Argument::Register("zero"),
-                                    Argument::Literal(Literal::Num(NumLiteral {
-                                        negative: false,
-                                        radix: 10,
-                                        body: "13"
-                                    }))
+                                    Argument {
+                                        pos: 23,
+                                        kind: ArgumentKind::Register("t0")
+                                    },
+                                    Argument {
+                                        pos: 28,
+                                        kind: ArgumentKind::Register("zero")
+                                    },
+                                    Argument {
+                                        pos: 35,
+                                        kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                            negative: false,
+                                            radix: 10,
+                                            body: "13"
+                                        }))
+                                    }
                                 ],
                             })
                         },
@@ -636,13 +671,22 @@ mod tests {
                             kind: EntryKind::Instruction(Instruction {
                                 name: "addi",
                                 arguments: vec![
-                                    Argument::Register("t1"),
-                                    Argument::Register("zero"),
-                                    Argument::Literal(Literal::Num(NumLiteral {
-                                        negative: false,
-                                        radix: 10,
-                                        body: "26"
-                                    }))
+                                    Argument {
+                                        pos: 49,
+                                        kind: ArgumentKind::Register("t1")
+                                    },
+                                    Argument {
+                                        pos: 54,
+                                        kind: ArgumentKind::Register("zero")
+                                    },
+                                    Argument {
+                                        pos: 61,
+                                        kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                            negative: false,
+                                            radix: 10,
+                                            body: "26"
+                                        }))
+                                    }
                                 ],
                             })
                         },
@@ -651,9 +695,18 @@ mod tests {
                             kind: EntryKind::Instruction(Instruction {
                                 name: "add",
                                 arguments: vec![
-                                    Argument::Register("t2"),
-                                    Argument::Register("t0"),
-                                    Argument::Register("t1")
+                                    Argument {
+                                        pos: 74,
+                                        kind: ArgumentKind::Register("t2")
+                                    },
+                                    Argument {
+                                        pos: 79,
+                                        kind: ArgumentKind::Register("t0")
+                                    },
+                                    Argument {
+                                        pos: 84,
+                                        kind: ArgumentKind::Register("t1")
+                                    }
                                 ],
                             })
                         }
@@ -713,8 +766,14 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "la",
                                     arguments: vec![
-                                        Argument::Register("t0"),
-                                        Argument::Label("fibs")
+                                        Argument {
+                                            pos: 286,
+                                            kind: ArgumentKind::Register("t0")
+                                        },
+                                        Argument {
+                                            pos: 291,
+                                            kind: ArgumentKind::Label("fibs")
+                                        }
                                     ]
                                 })
                             },
@@ -723,8 +782,14 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "la",
                                     arguments: vec![
-                                        Argument::Register("t5"),
-                                        Argument::Label("size")
+                                        Argument {
+                                            pos: 338,
+                                            kind: ArgumentKind::Register("t5")
+                                        },
+                                        Argument {
+                                            pos: 343,
+                                            kind: ArgumentKind::Label("size")
+                                        }
                                     ]
                                 })
                             },
@@ -733,14 +798,20 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "lw",
                                     arguments: vec![
-                                        Argument::Register("t5"),
-                                        Argument::OffsetRegister {
-                                            offset: NumLiteral {
-                                                negative: false,
-                                                radix: 10,
-                                                body: "0"
-                                            },
-                                            register: "t5"
+                                        Argument {
+                                            pos: 398,
+                                            kind: ArgumentKind::Register("t5")
+                                        },
+                                        Argument {
+                                            pos: 403,
+                                            kind: ArgumentKind::OffsetRegister {
+                                                offset: NumLiteral {
+                                                    negative: false,
+                                                    radix: 10,
+                                                    body: "0"
+                                                },
+                                                register: "t5"
+                                            }
                                         }
                                     ]
                                 })
@@ -750,12 +821,18 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "li",
                                     arguments: vec![
-                                        Argument::Register("t2"),
-                                        Argument::Literal(Literal::Num(NumLiteral {
-                                            negative: false,
-                                            radix: 10,
-                                            body: "1"
-                                        }))
+                                        Argument {
+                                            pos: 444,
+                                            kind: ArgumentKind::Register("t2")
+                                        },
+                                        Argument {
+                                            pos: 449,
+                                            kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "1"
+                                            }))
+                                        }
                                     ]
                                 })
                             },
@@ -764,14 +841,20 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "sw",
                                     arguments: vec![
-                                        Argument::Register("t2"),
-                                        Argument::OffsetRegister {
-                                            offset: NumLiteral {
-                                                negative: false,
-                                                radix: 10,
-                                                body: "0"
-                                            },
-                                            register: "t0"
+                                        Argument {
+                                            pos: 508,
+                                            kind: ArgumentKind::Register("t2")
+                                        },
+                                        Argument {
+                                            pos: 513,
+                                            kind: ArgumentKind::OffsetRegister {
+                                                offset: NumLiteral {
+                                                    negative: false,
+                                                    radix: 10,
+                                                    body: "0"
+                                                },
+                                                register: "t0"
+                                            }
                                         }
                                     ]
                                 })
@@ -781,14 +864,20 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "sw",
                                     arguments: vec![
-                                        Argument::Register("t2"),
-                                        Argument::OffsetRegister {
-                                            offset: NumLiteral {
-                                                negative: false,
-                                                radix: 10,
-                                                body: "4"
-                                            },
-                                            register: "t0"
+                                        Argument {
+                                            pos: 547,
+                                            kind: ArgumentKind::Register("t2")
+                                        },
+                                        Argument {
+                                            pos: 552,
+                                            kind: ArgumentKind::OffsetRegister {
+                                                offset: NumLiteral {
+                                                    negative: false,
+                                                    radix: 10,
+                                                    body: "4"
+                                                },
+                                                register: "t0"
+                                            }
                                         }
                                     ]
                                 })
@@ -798,13 +887,22 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "addi",
                                     arguments: vec![
-                                        Argument::Register("t1"),
-                                        Argument::Register("t5"),
-                                        Argument::Literal(Literal::Num(NumLiteral {
-                                            negative: true,
-                                            radix: 10,
-                                            body: "2"
-                                        }))
+                                        Argument {
+                                            pos: 593,
+                                            kind: ArgumentKind::Register("t1")
+                                        },
+                                        Argument {
+                                            pos: 598,
+                                            kind: ArgumentKind::Register("t5")
+                                        },
+                                        Argument {
+                                            pos: 603,
+                                            kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                                negative: true,
+                                                radix: 10,
+                                                body: "2"
+                                            }))
+                                        }
                                     ]
                                 })
                             },
@@ -817,14 +915,20 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "lw",
                                     arguments: vec![
-                                        Argument::Register("t3"),
-                                        Argument::OffsetRegister {
-                                            offset: NumLiteral {
-                                                negative: false,
-                                                radix: 10,
-                                                body: "0"
-                                            },
-                                            register: "t0"
+                                        Argument {
+                                            pos: 669,
+                                            kind: ArgumentKind::Register("t3")
+                                        },
+                                        Argument {
+                                            pos: 674,
+                                            kind: ArgumentKind::OffsetRegister {
+                                                offset: NumLiteral {
+                                                    negative: false,
+                                                    radix: 10,
+                                                    body: "0"
+                                                },
+                                                register: "t0"
+                                            }
                                         }
                                     ]
                                 })
@@ -834,14 +938,20 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "lw",
                                     arguments: vec![
-                                        Argument::Register("t4"),
-                                        Argument::OffsetRegister {
-                                            offset: NumLiteral {
-                                                negative: false,
-                                                radix: 10,
-                                                body: "4"
-                                            },
-                                            register: "t0"
+                                        Argument {
+                                            pos: 726,
+                                            kind: ArgumentKind::Register("t4")
+                                        },
+                                        Argument {
+                                            pos: 731,
+                                            kind: ArgumentKind::OffsetRegister {
+                                                offset: NumLiteral {
+                                                    negative: false,
+                                                    radix: 10,
+                                                    body: "4"
+                                                },
+                                                register: "t0"
+                                            }
                                         }
                                     ]
                                 })
@@ -851,9 +961,18 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "add",
                                     arguments: vec![
-                                        Argument::Register("t2"),
-                                        Argument::Register("t3"),
-                                        Argument::Register("t4")
+                                        Argument {
+                                            pos: 784,
+                                            kind: ArgumentKind::Register("t2")
+                                        },
+                                        Argument {
+                                            pos: 789,
+                                            kind: ArgumentKind::Register("t3")
+                                        },
+                                        Argument {
+                                            pos: 794,
+                                            kind: ArgumentKind::Register("t4")
+                                        }
                                     ]
                                 })
                             },
@@ -862,14 +981,20 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "sw",
                                     arguments: vec![
-                                        Argument::Register("t2"),
-                                        Argument::OffsetRegister {
-                                            offset: NumLiteral {
-                                                negative: false,
-                                                radix: 10,
-                                                body: "8"
-                                            },
-                                            register: "t0"
+                                        Argument {
+                                            pos: 834,
+                                            kind: ArgumentKind::Register("t2")
+                                        },
+                                        Argument {
+                                            pos: 839,
+                                            kind: ArgumentKind::OffsetRegister {
+                                                offset: NumLiteral {
+                                                    negative: false,
+                                                    radix: 10,
+                                                    body: "8"
+                                                },
+                                                register: "t0"
+                                            }
                                         }
                                     ]
                                 })
@@ -879,13 +1004,22 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "addi",
                                     arguments: vec![
-                                        Argument::Register("t0"),
-                                        Argument::Register("t0"),
-                                        Argument::Literal(Literal::Num(NumLiteral {
-                                            negative: false,
-                                            radix: 10,
-                                            body: "4"
-                                        }))
+                                        Argument {
+                                            pos: 902,
+                                            kind: ArgumentKind::Register("t0")
+                                        },
+                                        Argument {
+                                            pos: 907,
+                                            kind: ArgumentKind::Register("t0")
+                                        },
+                                        Argument {
+                                            pos: 912,
+                                            kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "4"
+                                            }))
+                                        }
                                     ]
                                 })
                             },
@@ -894,13 +1028,22 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "addi",
                                     arguments: vec![
-                                        Argument::Register("t1"),
-                                        Argument::Register("t1"),
-                                        Argument::Literal(Literal::Num(NumLiteral {
-                                            negative: true,
-                                            radix: 10,
-                                            body: "1"
-                                        }))
+                                        Argument {
+                                            pos: 972,
+                                            kind: ArgumentKind::Register("t1")
+                                        },
+                                        Argument {
+                                            pos: 977,
+                                            kind: ArgumentKind::Register("t1")
+                                        },
+                                        Argument {
+                                            pos: 982,
+                                            kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                                negative: true,
+                                                radix: 10,
+                                                body: "1"
+                                            }))
+                                        }
                                     ]
                                 })
                             },
@@ -909,8 +1052,14 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "bgtz",
                                     arguments: vec![
-                                        Argument::Register("t1"),
-                                        Argument::Label("loop")
+                                        Argument {
+                                            pos: 1025,
+                                            kind: ArgumentKind::Register("t1")
+                                        },
+                                        Argument {
+                                            pos: 1030,
+                                            kind: ArgumentKind::Label("loop")
+                                        }
                                     ]
                                 })
                             },
@@ -919,8 +1068,14 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "la",
                                     arguments: vec![
-                                        Argument::Register("a0"),
-                                        Argument::Label("fibs")
+                                        Argument {
+                                            pos: 1083,
+                                            kind: ArgumentKind::Register("a0")
+                                        },
+                                        Argument {
+                                            pos: 1088,
+                                            kind: ArgumentKind::Label("fibs")
+                                        }
                                     ]
                                 })
                             },
@@ -929,9 +1084,18 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "add",
                                     arguments: vec![
-                                        Argument::Register("a1"),
-                                        Argument::Register("zero"),
-                                        Argument::Register("t5")
+                                        Argument {
+                                            pos: 1146,
+                                            kind: ArgumentKind::Register("a1")
+                                        },
+                                        Argument {
+                                            pos: 1151,
+                                            kind: ArgumentKind::Register("zero")
+                                        },
+                                        Argument {
+                                            pos: 1158,
+                                            kind: ArgumentKind::Register("t5")
+                                        }
                                     ]
                                 })
                             },
@@ -939,7 +1103,10 @@ mod tests {
                                 pos: 1204,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "jal",
-                                    arguments: vec![Argument::Label("print")]
+                                    arguments: vec![Argument {
+                                        pos: 1209,
+                                        kind: ArgumentKind::Label("print")
+                                    }]
                                 })
                             },
                             Entry {
@@ -947,12 +1114,18 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "li",
                                     arguments: vec![
-                                        Argument::Register("v0"),
-                                        Argument::Literal(Literal::Num(NumLiteral {
-                                            negative: false,
-                                            radix: 10,
-                                            body: "10"
-                                        }))
+                                        Argument {
+                                            pos: 1260,
+                                            kind: ArgumentKind::Register("v0")
+                                        },
+                                        Argument {
+                                            pos: 1265,
+                                            kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "10"
+                                            }))
+                                        }
                                     ]
                                 })
                             },
@@ -996,9 +1169,18 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "add",
                                     arguments: vec![
-                                        Argument::Register("t0"),
-                                        Argument::Register("zero"),
-                                        Argument::Register("a0")
+                                        Argument {
+                                            pos: 1551,
+                                            kind: ArgumentKind::Register("t0")
+                                        },
+                                        Argument {
+                                            pos: 1556,
+                                            kind: ArgumentKind::Register("zero")
+                                        },
+                                        Argument {
+                                            pos: 1563,
+                                            kind: ArgumentKind::Register("a0")
+                                        }
                                     ]
                                 })
                             },
@@ -1007,9 +1189,18 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "add",
                                     arguments: vec![
-                                        Argument::Register("t1"),
-                                        Argument::Register("zero"),
-                                        Argument::Register("a1")
+                                        Argument {
+                                            pos: 1607,
+                                            kind: ArgumentKind::Register("t1")
+                                        },
+                                        Argument {
+                                            pos: 1612,
+                                            kind: ArgumentKind::Register("zero")
+                                        },
+                                        Argument {
+                                            pos: 1619,
+                                            kind: ArgumentKind::Register("a1")
+                                        }
                                     ]
                                 })
                             },
@@ -1018,8 +1209,14 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "la",
                                     arguments: vec![
-                                        Argument::Register("a0"),
-                                        Argument::Label("head")
+                                        Argument {
+                                            pos: 1675,
+                                            kind: ArgumentKind::Register("a0")
+                                        },
+                                        Argument {
+                                            pos: 1680,
+                                            kind: ArgumentKind::Label("head")
+                                        }
                                     ]
                                 })
                             },
@@ -1028,12 +1225,18 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "li",
                                     arguments: vec![
-                                        Argument::Register("v0"),
-                                        Argument::Literal(Literal::Num(NumLiteral {
-                                            negative: false,
-                                            radix: 10,
-                                            body: "4"
-                                        }))
+                                        Argument {
+                                            pos: 1735,
+                                            kind: ArgumentKind::Register("v0")
+                                        },
+                                        Argument {
+                                            pos: 1740,
+                                            kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "4"
+                                            }))
+                                        }
                                     ]
                                 })
                             },
@@ -1053,14 +1256,20 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "lw",
                                     arguments: vec![
-                                        Argument::Register("a0"),
-                                        Argument::OffsetRegister {
-                                            offset: NumLiteral {
-                                                negative: false,
-                                                radix: 10,
-                                                body: "0"
-                                            },
-                                            register: "t0"
+                                        Argument {
+                                            pos: 1838,
+                                            kind: ArgumentKind::Register("a0")
+                                        },
+                                        Argument {
+                                            pos: 1843,
+                                            kind: ArgumentKind::OffsetRegister {
+                                                offset: NumLiteral {
+                                                    negative: false,
+                                                    radix: 10,
+                                                    body: "0"
+                                                },
+                                                register: "t0"
+                                            }
                                         }
                                     ]
                                 })
@@ -1070,12 +1279,18 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "li",
                                     arguments: vec![
-                                        Argument::Register("v0"),
-                                        Argument::Literal(Literal::Num(NumLiteral {
-                                            negative: false,
-                                            radix: 10,
-                                            body: "1"
-                                        }))
+                                        Argument {
+                                            pos: 1902,
+                                            kind: ArgumentKind::Register("v0")
+                                        },
+                                        Argument {
+                                            pos: 1907,
+                                            kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "1"
+                                            }))
+                                        }
                                     ]
                                 })
                             },
@@ -1091,8 +1306,14 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "la",
                                     arguments: vec![
-                                        Argument::Register("a0"),
-                                        Argument::Label("space")
+                                        Argument {
+                                            pos: 2015,
+                                            kind: ArgumentKind::Register("a0")
+                                        },
+                                        Argument {
+                                            pos: 2020,
+                                            kind: ArgumentKind::Label("space")
+                                        }
                                     ]
                                 })
                             },
@@ -1101,12 +1322,18 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "li",
                                     arguments: vec![
-                                        Argument::Register("v0"),
-                                        Argument::Literal(Literal::Num(NumLiteral {
-                                            negative: false,
-                                            radix: 10,
-                                            body: "4"
-                                        }))
+                                        Argument {
+                                            pos: 2080,
+                                            kind: ArgumentKind::Register("v0")
+                                        },
+                                        Argument {
+                                            pos: 2085,
+                                            kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "4"
+                                            }))
+                                        }
                                     ]
                                 })
                             },
@@ -1122,13 +1349,22 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "addi",
                                     arguments: vec![
-                                        Argument::Register("t0"),
-                                        Argument::Register("t0"),
-                                        Argument::Literal(Literal::Num(NumLiteral {
-                                            negative: false,
-                                            radix: 10,
-                                            body: "4"
-                                        }))
+                                        Argument {
+                                            pos: 2183,
+                                            kind: ArgumentKind::Register("t0")
+                                        },
+                                        Argument {
+                                            pos: 2188,
+                                            kind: ArgumentKind::Register("t0")
+                                        },
+                                        Argument {
+                                            pos: 2193,
+                                            kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "4"
+                                            }))
+                                        }
                                     ]
                                 })
                             },
@@ -1137,13 +1373,22 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "addi",
                                     arguments: vec![
-                                        Argument::Register("t1"),
-                                        Argument::Register("t1"),
-                                        Argument::Literal(Literal::Num(NumLiteral {
-                                            negative: true,
-                                            radix: 10,
-                                            body: "1"
-                                        }))
+                                        Argument {
+                                            pos: 2231,
+                                            kind: ArgumentKind::Register("t1")
+                                        },
+                                        Argument {
+                                            pos: 2236,
+                                            kind: ArgumentKind::Register("t1")
+                                        },
+                                        Argument {
+                                            pos: 2241,
+                                            kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                                negative: true,
+                                                radix: 10,
+                                                body: "1"
+                                            }))
+                                        }
                                     ]
                                 })
                             },
@@ -1152,8 +1397,14 @@ mod tests {
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "bgtz",
                                     arguments: vec![
-                                        Argument::Register("t1"),
-                                        Argument::Label("out")
+                                        Argument {
+                                            pos: 2284,
+                                            kind: ArgumentKind::Register("t1")
+                                        },
+                                        Argument {
+                                            pos: 2289,
+                                            kind: ArgumentKind::Label("out")
+                                        }
                                     ]
                                 })
                             },
@@ -1161,7 +1412,10 @@ mod tests {
                                 pos: 2332,
                                 kind: EntryKind::Instruction(Instruction {
                                     name: "jr",
-                                    arguments: vec![Argument::Register("ra")]
+                                    arguments: vec![Argument {
+                                        pos: 2337,
+                                        kind: ArgumentKind::Register("ra")
+                                    }]
                                 })
                             }
                         ])

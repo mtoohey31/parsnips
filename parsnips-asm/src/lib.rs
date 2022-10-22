@@ -2,8 +2,8 @@
 
 use parsnips_inst::{Funct, Inst, Op};
 use parsnips_parser::{
-    Argument, Ast, DataKind, DataValue, EntryKind, Instruction, Literal, NumLiteral, ParseMaybeNeg,
-    ParseNonNeg, SectionKind,
+    ArgumentKind, Ast, DataKind, DataValue, EntryKind, Instruction, Literal, NumLiteral,
+    ParseMaybeNeg, ParseNonNeg, SectionKind,
 };
 
 extern crate alloc;
@@ -96,7 +96,7 @@ fn new_jump(op: Op) -> Inst {
 #[derive(Debug, PartialEq, Eq)]
 pub enum AssembleError<'a> {
     ExpectedArgument,
-    InvalidArgument(Argument<'a>),
+    InvalidArgument(ArgumentKind<'a>),
     InvalidDestination,
     MisalignedOffset(u16),
     NoText,
@@ -105,7 +105,7 @@ pub enum AssembleError<'a> {
     OverflowingLabelReference(u32),
     ParseIntError(IntErrorKind),
     RedeclaredLabel(&'a str),
-    UnexpectedArgument(Argument<'a>),
+    UnexpectedArgument(ArgumentKind<'a>),
     UndefinedLabel(&'a str),
     UnknownInstruction(&'a str),
     UnknownReg(&'a str),
@@ -116,15 +116,15 @@ macro_rules! assert_nargs {
         if $args.len() < $n {
             return Err(AssembleError::ExpectedArgument);
         } else if $n < $args.len() {
-            return Err(AssembleError::UnexpectedArgument($args.remove($n)));
+            return Err(AssembleError::UnexpectedArgument($args.remove($n).kind));
         }
     }};
 }
 
 macro_rules! expect_reg {
     ($args:expr) => {{
-        let a = $args.remove(0);
-        if let Argument::Register(name) = a {
+        let a = $args.remove(0).kind;
+        if let ArgumentKind::Register(name) = a {
             Ok(Reg::try_from(name).map_err(|_| AssembleError::UnknownReg(name))?)
         } else {
             Err(AssembleError::InvalidArgument(a))
@@ -134,8 +134,8 @@ macro_rules! expect_reg {
 
 macro_rules! expect_num_lit {
     ($args:expr) => {{
-        let a = $args.remove(0);
-        if let Argument::Literal(Literal::Num(lit)) = a {
+        let a = $args.remove(0).kind;
+        if let ArgumentKind::Literal(Literal::Num(lit)) = a {
             Ok(lit)
         } else {
             Err(AssembleError::InvalidArgument(a))
@@ -145,8 +145,8 @@ macro_rules! expect_num_lit {
 
 macro_rules! expect_label {
     ($args:expr) => {{
-        let a = $args.remove(0);
-        if let Argument::Label(lit) = a {
+        let a = $args.remove(0).kind;
+        if let ArgumentKind::Label(lit) = a {
             Ok(lit)
         } else {
             Err(AssembleError::InvalidArgument(a))
@@ -319,8 +319,9 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                     Op::LB | Op::LBU | Op::SB => {
                                         assert_nargs!(arguments, 2);
                                         let rt = expect_reg!(arguments);
-                                        let a = arguments.remove(0);
-                                        if let Argument::OffsetRegister { offset, register } = a {
+                                        let a = arguments.remove(0).kind;
+                                        if let ArgumentKind::OffsetRegister { offset, register } = a
+                                        {
                                             new_load_store(
                                                 op,
                                                 Reg::try_from(register)
@@ -337,8 +338,9 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                     Op::LH | Op::LHU | Op::SH => {
                                         assert_nargs!(arguments, 2);
                                         let rt = expect_reg!(arguments);
-                                        let a = arguments.remove(0);
-                                        if let Argument::OffsetRegister { offset, register } = a {
+                                        let a = arguments.remove(0).kind;
+                                        if let ArgumentKind::OffsetRegister { offset, register } = a
+                                        {
                                             let offset = u16::parse_maybe_neg(offset)
                                                 .map_err(AssembleError::ParseIntError)?;
                                             if offset % 2 != 0 {
@@ -362,8 +364,9 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                     Op::LW | Op::SW => {
                                         assert_nargs!(arguments, 2);
                                         let rt = expect_reg!(arguments);
-                                        let a = arguments.remove(0);
-                                        if let Argument::OffsetRegister { offset, register } = a {
+                                        let a = arguments.remove(0).kind;
+                                        if let ArgumentKind::OffsetRegister { offset, register } = a
+                                        {
                                             let offset = u16::parse_maybe_neg(offset)
                                                 .map_err(AssembleError::ParseIntError)?;
                                             if offset % 4 != 0 {
@@ -397,7 +400,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                     Op::SYSCALL => {
                                         if arguments.len() > 0 {
                                             return Err(AssembleError::UnexpectedArgument(
-                                                arguments.remove(0),
+                                                arguments.remove(0).kind,
                                             ));
                                         }
 
@@ -844,7 +847,7 @@ mod tests {
     fn unexpected_arg() {
         asm_err_text_test!(
             "addi $t0, $zero, 4, 9",
-            AssembleError::UnexpectedArgument(Argument::Literal(Literal::Num(NumLiteral {
+            AssembleError::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(NumLiteral {
                 negative: false,
                 radix: 10,
                 body: "9"
@@ -852,7 +855,7 @@ mod tests {
         );
         asm_err_text_test!(
             "sb $t0, 0",
-            AssembleError::UnexpectedArgument(Argument::Literal(Literal::Num(NumLiteral {
+            AssembleError::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(NumLiteral {
                 negative: false,
                 radix: 10,
                 body: "0"
@@ -860,7 +863,7 @@ mod tests {
         );
         asm_err_text_test!(
             "sh $t0, 0",
-            AssembleError::UnexpectedArgument(Argument::Literal(Literal::Num(NumLiteral {
+            AssembleError::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(NumLiteral {
                 negative: false,
                 radix: 10,
                 body: "0"
@@ -868,7 +871,7 @@ mod tests {
         );
         asm_err_text_test!(
             "sw $t0, 0",
-            AssembleError::UnexpectedArgument(Argument::Literal(Literal::Num(NumLiteral {
+            AssembleError::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(NumLiteral {
                 negative: false,
                 radix: 10,
                 body: "0"
@@ -876,7 +879,7 @@ mod tests {
         );
         asm_err_text_test!(
             "syscall 0",
-            AssembleError::UnexpectedArgument(Argument::Literal(Literal::Num(NumLiteral {
+            AssembleError::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(NumLiteral {
                 negative: false,
                 radix: 10,
                 body: "0"
