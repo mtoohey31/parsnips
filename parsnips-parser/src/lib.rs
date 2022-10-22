@@ -191,13 +191,16 @@ impl ParseMaybeNeg for u32 {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Data<'a> {
+    pub pos: usize,
     pub label: &'a str,
     pub value: DataDeclaration<'a>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DataDeclaration<'a> {
+    pub pos: usize,
     pub kind: DataKind,
+    pub value_pos: usize,
     pub value: DataValue<'a>,
 }
 
@@ -218,6 +221,7 @@ pub enum DataValue<'a> {
     Int(NumLiteral<'a>),
     Array {
         value: NumLiteral<'a>,
+        size_pos: usize,
         size: NumLiteral<'a>,
     },
 }
@@ -266,7 +270,7 @@ macro_rules! expect_ident {
         match $ti.next() {
             Some(t) => {
                 if let TokenKind::Ident(s) = t.kind {
-                    Ok((t.pos, s))
+                    Ok((s, t.pos))
                 } else {
                     Err(ParseError {
                         pos: t.pos,
@@ -287,7 +291,7 @@ macro_rules! expect_literal {
         match $ti.next() {
             Some(t) => {
                 if let TokenKind::Literal(l) = t.kind {
-                    Ok(l)
+                    Ok((l, t.pos))
                 } else {
                     Err(ParseError {
                         pos: t.pos,
@@ -400,7 +404,8 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                         expect!(ti, TokenKind::Colon, t.pos)?;
                         let pos = skip_whitespace!(ti, t.pos + 1);
                         expect!(ti, TokenKind::Dot, pos)?;
-                        let (pos, kind_str) = expect_ident!(ti, pos + 1)?;
+                        let (kind_str, pos) = expect_ident!(ti, pos + 1)?;
+                        let dot_pos = pos - 1;
                         let kind: DataKind = DataKind::try_from(kind_str).or_else(|_| {
                             Err(ParseError {
                                 pos,
@@ -408,15 +413,18 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                             })
                         })?;
                         let pos = skip_at_least_one_whitespace!(ti, pos)?;
-                        let t = ti.next().ok_or(ParseError {
+                        let tn = ti.next().ok_or(ParseError {
                             pos,
                             kind: ParseErrorKind::UnexpectedEOF,
                         })?;
                         data.push(Data {
+                            pos: t.pos,
                             label: i,
                             value: DataDeclaration {
+                                pos: dot_pos,
                                 kind,
-                                value: match t.kind {
+                                value_pos: tn.pos,
+                                value: match tn.kind {
                                     TokenKind::Dot => todo!(),
                                     TokenKind::Comma => todo!(),
                                     TokenKind::Colon => todo!(),
@@ -427,7 +435,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                     TokenKind::Newline => todo!(),
                                     TokenKind::Ident(_) => todo!(),
                                     TokenKind::Literal(Literal::Num(value)) => {
-                                        skip_whitespace!(ti, t.pos);
+                                        skip_whitespace!(ti, tn.pos);
                                         let t = match ti.next() {
                                             Some(t) => t,
                                             None => todo!(),
@@ -437,10 +445,14 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                             TokenKind::Comma => todo!(),
                                             TokenKind::Colon => {
                                                 let pos = skip_whitespace!(ti, t.pos);
-                                                match expect_literal!(ti, pos)? {
-                                                    Literal::Num(size) => {
-                                                        DataValue::Array { value, size }
-                                                    }
+                                                let (size_lit, size_pos) =
+                                                    expect_literal!(ti, pos)?;
+                                                match size_lit {
+                                                    Literal::Num(size) => DataValue::Array {
+                                                        value,
+                                                        size_pos,
+                                                        size,
+                                                    },
                                                     Literal::Char(_) => todo!(),
                                                     Literal::Str(_) => todo!(),
                                                 }
@@ -498,7 +510,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                 }
                                 TokenKind::Dollar => inst.arguments.push(Argument {
                                     pos: tn.pos,
-                                    kind: ArgumentKind::Register(expect_ident!(ti, tn.pos)?.1),
+                                    kind: ArgumentKind::Register(expect_ident!(ti, tn.pos)?.0),
                                 }),
                                 TokenKind::Ident(i) => {
                                     inst.arguments.push(Argument {
@@ -552,7 +564,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                         inst.arguments.push(Argument {
                                             pos: t.pos,
                                             kind: ArgumentKind::Register(
-                                                expect_ident!(ti, t.pos)?.1,
+                                                expect_ident!(ti, t.pos)?.0,
                                             ),
                                         });
                                     }
@@ -567,7 +579,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                         {
                                             let Token { pos, .. } = ti.next().unwrap();
                                             expect!(ti, TokenKind::Dollar, pos)?;
-                                            let (ident_pos, register) = expect_ident!(ti, pos + 1)?;
+                                            let (register, ident_pos) = expect_ident!(ti, pos + 1)?;
                                             inst.arguments.push(Argument {
                                                 pos: t.pos,
                                                 kind: ArgumentKind::OffsetRegister {
@@ -710,15 +722,19 @@ mod tests {
                         pos: 138,
                         kind: SectionKind::Data(vec![
                             Data {
+                                pos: 144,
                                 label: "fibs",
                                 value: DataDeclaration {
+                                    pos: 150,
                                     kind: DataKind::Word,
+                                    value_pos: 158,
                                     value: DataValue::Array {
                                         value: NumLiteral {
                                             negative: false,
                                             radix: 10,
                                             body: "0"
                                         },
+                                        size_pos: 162,
                                         size: NumLiteral {
                                             negative: false,
                                             radix: 10,
@@ -728,9 +744,12 @@ mod tests {
                                 }
                             },
                             Data {
+                                pos: 216,
                                 label: "size",
                                 value: DataDeclaration {
+                                    pos: 222,
                                     kind: DataKind::Word,
+                                    value_pos: 229,
                                     value: DataValue::Int(NumLiteral {
                                         negative: false,
                                         radix: 10,
@@ -1130,16 +1149,22 @@ mod tests {
                         pos: 1414,
                         kind: SectionKind::Data(vec![
                             Data {
+                                pos: 1420,
                                 label: "space",
                                 value: DataDeclaration {
+                                    pos: 1426,
                                     kind: DataKind::Asciiz,
+                                    value_pos: 1435,
                                     value: DataValue::String(" ")
                                 }
                             },
                             Data {
+                                pos: 1482,
                                 label: "head",
                                 value: DataDeclaration {
+                                    pos: 1488,
                                     kind: DataKind::Asciiz,
+                                    value_pos: 1497,
                                     value: DataValue::String("The Fibonacci numbers are:\\n")
                                 }
                             }

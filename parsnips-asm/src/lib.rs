@@ -192,7 +192,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                     label_definitions.insert(entry.label, program.len());
                     match entry.value.kind {
                         DataKind::Word => match entry.value.value {
-                            DataValue::Array { value, size } => {
+                            DataValue::Array { value, size, .. } => {
                                 let value = u32::parse_maybe_neg(value)
                                     .map_err(AssembleError::ParseIntError)?;
                                 let size = usize::parse_non_neg(size)
