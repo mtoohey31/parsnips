@@ -320,7 +320,11 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                         assert_nargs!(arguments, 2);
                                         let rt = expect_reg!(arguments);
                                         let a = arguments.remove(0).kind;
-                                        if let ArgumentKind::OffsetRegister { offset, register } = a
+                                        if let ArgumentKind::OffsetRegister {
+                                            offset,
+                                            register,
+                                            ..
+                                        } = a
                                         {
                                             new_load_store(
                                                 op,
@@ -339,7 +343,11 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                         assert_nargs!(arguments, 2);
                                         let rt = expect_reg!(arguments);
                                         let a = arguments.remove(0).kind;
-                                        if let ArgumentKind::OffsetRegister { offset, register } = a
+                                        if let ArgumentKind::OffsetRegister {
+                                            offset,
+                                            register,
+                                            ..
+                                        } = a
                                         {
                                             let offset = u16::parse_maybe_neg(offset)
                                                 .map_err(AssembleError::ParseIntError)?;
@@ -365,7 +373,11 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                         assert_nargs!(arguments, 2);
                                         let rt = expect_reg!(arguments);
                                         let a = arguments.remove(0).kind;
-                                        if let ArgumentKind::OffsetRegister { offset, register } = a
+                                        if let ArgumentKind::OffsetRegister {
+                                            offset,
+                                            register,
+                                            ..
+                                        } = a
                                         {
                                             let offset = u16::parse_maybe_neg(offset)
                                                 .map_err(AssembleError::ParseIntError)?;

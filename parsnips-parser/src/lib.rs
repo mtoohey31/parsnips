@@ -62,7 +62,10 @@ pub struct Argument<'a> {
 pub enum ArgumentKind<'a> {
     Register(&'a str),
     OffsetRegister {
+        // the position of the offset is equal to the position of this argument
+        // as whole, so we don't need to store it again here
         offset: NumLiteral<'a>,
+        register_pos: usize,
         register: &'a str,
     },
     Literal(Literal<'a>),
@@ -580,15 +583,16 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                         {
                                             let Token { pos, .. } = ti.next().unwrap();
                                             expect!(ti, TokenKind::Dollar, pos)?;
-                                            let (pos, register) = expect_ident!(ti, pos + 1)?;
+                                            let (ident_pos, register) = expect_ident!(ti, pos + 1)?;
                                             inst.arguments.push(Argument {
                                                 pos: t.pos,
                                                 kind: ArgumentKind::OffsetRegister {
                                                     offset: nl,
+                                                    register_pos: pos + 1,
                                                     register,
                                                 },
                                             });
-                                            expect!(ti, TokenKind::CloseParen, pos)?;
+                                            expect!(ti, TokenKind::CloseParen, ident_pos)?;
                                         } else {
                                             inst.arguments.push(Argument {
                                                 pos: t.pos,
@@ -810,6 +814,7 @@ mod tests {
                                                     radix: 10,
                                                     body: "0"
                                                 },
+                                                register_pos: 405,
                                                 register: "t5"
                                             }
                                         }
@@ -853,6 +858,7 @@ mod tests {
                                                     radix: 10,
                                                     body: "0"
                                                 },
+                                                register_pos: 515,
                                                 register: "t0"
                                             }
                                         }
@@ -876,6 +882,7 @@ mod tests {
                                                     radix: 10,
                                                     body: "4"
                                                 },
+                                                register_pos: 554,
                                                 register: "t0"
                                             }
                                         }
@@ -927,6 +934,7 @@ mod tests {
                                                     radix: 10,
                                                     body: "0"
                                                 },
+                                                register_pos: 676,
                                                 register: "t0"
                                             }
                                         }
@@ -950,6 +958,7 @@ mod tests {
                                                     radix: 10,
                                                     body: "4"
                                                 },
+                                                register_pos: 733,
                                                 register: "t0"
                                             }
                                         }
@@ -993,6 +1002,7 @@ mod tests {
                                                     radix: 10,
                                                     body: "8"
                                                 },
+                                                register_pos: 841,
                                                 register: "t0"
                                             }
                                         }
@@ -1268,6 +1278,7 @@ mod tests {
                                                     radix: 10,
                                                     body: "0"
                                                 },
+                                                register_pos: 1845,
                                                 register: "t0"
                                             }
                                         }
