@@ -72,7 +72,7 @@ pub fn lex<'a>(input: &'a str) -> Result<Vec<Token<'a>>, LexError> {
                 let mut body_pos = pos;
                 if negative {
                     (body_pos, c) = ci.next().ok_or(LexError {
-                        pos,
+                        pos: pos + 1,
                         kind: LexErrorKind::UnterminatedNum,
                     })?;
                     if !matches!(c, '0'..='9') {
@@ -131,33 +131,33 @@ pub fn lex<'a>(input: &'a str) -> Result<Vec<Token<'a>>, LexError> {
             }
             '\'' => {
                 let res = match ci.next() {
-                    Some((pos, '\\')) => match ci.next() {
-                        Some((pos, 't')) => Token {
+                    Some((err_pos, '\\')) => match ci.next() {
+                        Some((_, 't')) => Token {
                             pos,
                             kind: TokenKind::Literal(Literal::Char('\t')),
                         },
-                        Some((pos, 'n')) => Token {
+                        Some((_, 'n')) => Token {
                             pos,
                             kind: TokenKind::Literal(Literal::Char('\n')),
                         },
-                        Some((pos, '\\')) => Token {
+                        Some((_, '\\')) => Token {
                             pos,
                             kind: TokenKind::Literal(Literal::Char('\\')),
                         },
-                        Some((pos, c)) => {
+                        Some((err_pos, c)) => {
                             return Err(LexError {
-                                pos,
+                                pos: err_pos,
                                 kind: LexErrorKind::InvalidCharEscape(c),
                             })
                         }
                         None => {
                             return Err(LexError {
-                                pos: pos + 1,
+                                pos: err_pos + 1,
                                 kind: LexErrorKind::UnterminatedChar,
                             })
                         }
                     },
-                    Some((pos, c)) => Token {
+                    Some((_, c)) => Token {
                         pos,
                         kind: TokenKind::Literal(Literal::Char(c)),
                     },
@@ -233,7 +233,7 @@ pub fn lex<'a>(input: &'a str) -> Result<Vec<Token<'a>>, LexError> {
                 pos,
                 kind: TokenKind::Dollar,
             }),
-            '\n' | '\u{0085}' | '\u{2029}' => tokens.push(Token {
+            c if is_newline(c) => tokens.push(Token {
                 pos,
                 kind: TokenKind::Newline,
             }),
@@ -316,8 +316,378 @@ fn is_ident(c: char) -> bool {
 mod tests {
     use super::*;
     use alloc::vec;
-    use alloc::vec::Vec;
     use pretty_assertions::assert_eq;
+
+    macro_rules! lex_test {
+        ($s:expr, $($t:expr),+ $(,)?) => {
+            assert_eq!(lex($s).unwrap(), vec![$($t),+])
+        }
+    }
+
+    macro_rules! lex_err_test {
+        ($s:expr, $e:expr) => {
+            assert_eq!(lex($s).unwrap_err(), $e)
+        };
+    }
+
+    #[test]
+    fn comment() {
+        lex_test!(
+            "# a comment\n# another comment",
+            Token {
+                pos: 11,
+                kind: TokenKind::Newline
+            }
+        );
+    }
+
+    #[test]
+    fn dot() {
+        lex_test!(
+            ".",
+            Token {
+                pos: 0,
+                kind: TokenKind::Dot
+            }
+        );
+    }
+
+    #[test]
+    fn comma() {
+        lex_test!(
+            ",",
+            Token {
+                pos: 0,
+                kind: TokenKind::Comma
+            }
+        );
+    }
+
+    #[test]
+    fn colon() {
+        lex_test!(
+            ":",
+            Token {
+                pos: 0,
+                kind: TokenKind::Colon
+            }
+        );
+    }
+
+    #[test]
+    fn open_paren() {
+        lex_test!(
+            "(",
+            Token {
+                pos: 0,
+                kind: TokenKind::OpenParen
+            }
+        );
+    }
+
+    #[test]
+    fn close_paren() {
+        lex_test!(
+            ")",
+            Token {
+                pos: 0,
+                kind: TokenKind::CloseParen
+            }
+        );
+    }
+
+    #[test]
+    fn dollar() {
+        lex_test!(
+            "$",
+            Token {
+                pos: 0,
+                kind: TokenKind::Dollar
+            }
+        );
+    }
+
+    #[test]
+    fn newline() {
+        lex_test!(
+            "\n",
+            Token {
+                pos: 0,
+                kind: TokenKind::Newline
+            },
+        );
+    }
+
+    #[test]
+    fn whitespace() {
+        lex_test!(
+            "\t\u{000B}\u{000C}\r \u{0085}\u{200E}\u{200F}\u{2028}\u{2029}",
+            Token {
+                pos: 0,
+                kind: TokenKind::Whitespace
+            },
+            Token {
+                pos: 1,
+                kind: TokenKind::Whitespace
+            },
+            Token {
+                pos: 2,
+                kind: TokenKind::Whitespace,
+            },
+            Token {
+                pos: 3,
+                kind: TokenKind::Whitespace,
+            },
+            Token {
+                pos: 4,
+                kind: TokenKind::Whitespace,
+            },
+            Token {
+                pos: 5,
+                kind: TokenKind::Whitespace,
+            },
+            Token {
+                pos: 7,
+                kind: TokenKind::Whitespace,
+            },
+            Token {
+                pos: 10,
+                kind: TokenKind::Whitespace,
+            },
+            Token {
+                pos: 13,
+                kind: TokenKind::Whitespace,
+            },
+            Token {
+                pos: 16,
+                kind: TokenKind::Whitespace,
+            },
+        );
+    }
+
+    #[test]
+    fn ident() {
+        lex_test!(
+            "asdf123",
+            Token {
+                pos: 0,
+                kind: TokenKind::Ident("asdf123")
+            }
+        );
+    }
+
+    #[test]
+    fn unexpected() {
+        lex_err_test!(
+            "!",
+            LexError {
+                pos: 0,
+                kind: LexErrorKind::UnexpectedToken('!')
+            }
+        );
+    }
+
+    #[test]
+    fn num() {
+        lex_err_test!(
+            "-",
+            LexError {
+                pos: 1,
+                kind: LexErrorKind::UnterminatedNum
+            }
+        );
+        lex_err_test!(
+            "- ",
+            LexError {
+                pos: 1,
+                kind: LexErrorKind::UnterminatedNum
+            }
+        );
+        lex_test!(
+            "5894",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: false,
+                    radix: 10,
+                    body: "5894"
+                }))
+            }
+        );
+        lex_test!(
+            "05894",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: false,
+                    radix: 10,
+                    body: "05894"
+                }))
+            }
+        );
+        lex_test!(
+            "-5894",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: true,
+                    radix: 10,
+                    body: "5894"
+                }))
+            }
+        );
+        lex_test!(
+            "0b01101",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: false,
+                    radix: 2,
+                    body: "01101"
+                }))
+            }
+        );
+        lex_test!(
+            "-0b01101",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: true,
+                    radix: 2,
+                    body: "01101"
+                }))
+            }
+        );
+        lex_test!(
+            "0o07635",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: false,
+                    radix: 8,
+                    body: "07635"
+                }))
+            }
+        );
+        lex_test!(
+            "-0o07635",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: true,
+                    radix: 8,
+                    body: "07635"
+                }))
+            }
+        );
+        lex_test!(
+            "0xfa9eb3",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: false,
+                    radix: 16,
+                    body: "fa9eb3"
+                }))
+            }
+        );
+        lex_test!(
+            "-0xfa9eb3",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Num(NumLiteral {
+                    negative: true,
+                    radix: 16,
+                    body: "fa9eb3"
+                }))
+            }
+        );
+    }
+
+    #[test]
+    fn char() {
+        lex_test!(
+            "'a'",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Char('a'))
+            }
+        );
+        lex_test!(
+            "'\\t'",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Char('\t'))
+            }
+        );
+        lex_test!(
+            "'\\n'",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Char('\n'))
+            }
+        );
+        lex_test!(
+            "'\\\\'",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Char('\\'))
+            }
+        );
+        lex_err_test!(
+            "'\\a'",
+            LexError {
+                pos: 2,
+                kind: LexErrorKind::InvalidCharEscape('a')
+            }
+        );
+        lex_err_test!(
+            "'\\",
+            LexError {
+                pos: 2,
+                kind: LexErrorKind::UnterminatedChar
+            }
+        );
+        lex_err_test!(
+            "'",
+            LexError {
+                pos: 1,
+                kind: LexErrorKind::UnterminatedChar
+            }
+        );
+        lex_err_test!(
+            "'aa",
+            LexError {
+                pos: 2,
+                kind: LexErrorKind::NonSingleChar
+            }
+        );
+    }
+
+    #[test]
+    fn string() {
+        lex_test!(
+            "\"a string\"",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Str("a string"))
+            }
+        );
+        lex_test!(
+            "\"a string\\\\\"",
+            Token {
+                pos: 0,
+                kind: TokenKind::Literal(Literal::Str("a string\\\\"))
+            }
+        );
+        lex_err_test!(
+            "\"a string",
+            LexError {
+                pos: 0,
+                kind: LexErrorKind::UnterminatedStr
+            }
+        );
+    }
 
     #[test]
     fn basic() {
@@ -461,127 +831,6 @@ mod tests {
                     kind: TokenKind::Newline
                 },
             ]
-        )
-    }
-
-    #[test]
-    fn comment() {
-        assert_eq!(lex("# a comment").unwrap(), vec![])
-    }
-
-    #[test]
-    fn int() {
-        assert_eq!(
-            lex("-5894").unwrap(),
-            vec![Token {
-                pos: 0,
-                kind: TokenKind::Literal(Literal::Num(NumLiteral {
-                    negative: true,
-                    radix: 10,
-                    body: "5894"
-                }))
-            }]
-        )
-    }
-
-    #[test]
-    fn uint() {
-        assert_eq!(
-            lex("5894").unwrap(),
-            vec![Token {
-                pos: 0,
-                kind: TokenKind::Literal(Literal::Num(NumLiteral {
-                    negative: false,
-                    radix: 10,
-                    body: "5894"
-                }))
-            }]
-        )
-    }
-
-    #[test]
-    fn negative_overflow() {
-        assert_eq!(
-            lex("-584654654654654654694").unwrap(),
-            vec![Token {
-                pos: 0,
-                kind: TokenKind::Literal(Literal::Num(NumLiteral {
-                    negative: true,
-                    radix: 10,
-                    body: "584654654654654654694"
-                }))
-            }]
-        )
-    }
-
-    #[test]
-    fn positive_overflow() {
-        assert_eq!(
-            lex("584654654654654654694").unwrap(),
-            vec![Token {
-                pos: 0,
-                kind: TokenKind::Literal(Literal::Num(NumLiteral {
-                    negative: false,
-                    radix: 10,
-                    body: "584654654654654654694"
-                }))
-            }]
-        )
-    }
-
-    #[test]
-    fn binary() {
-        assert_eq!(
-            lex("-0b0100").unwrap(),
-            vec![Token {
-                pos: 0,
-                kind: TokenKind::Literal(Literal::Num(NumLiteral {
-                    negative: true,
-                    radix: 2,
-                    body: "0100"
-                }))
-            }]
-        )
-    }
-
-    #[test]
-    fn ocatal() {
-        assert_eq!(
-            lex("-0o0700").unwrap(),
-            vec![Token {
-                pos: 0,
-                kind: TokenKind::Literal(Literal::Num(NumLiteral {
-                    negative: true,
-                    radix: 8,
-                    body: "0700"
-                }))
-            }]
-        )
-    }
-
-    #[test]
-    fn hex() {
-        assert_eq!(
-            lex("-0x0AbE").unwrap(),
-            vec![Token {
-                pos: 0,
-                kind: TokenKind::Literal(Literal::Num(NumLiteral {
-                    negative: true,
-                    radix: 16,
-                    body: "0AbE"
-                }))
-            }]
-        )
-    }
-
-    #[test]
-    fn string_simple() {
-        assert_eq!(
-            lex("\"a string\"").unwrap(),
-            vec![Token {
-                pos: 0,
-                kind: TokenKind::Literal(Literal::Str("a string"))
-            }]
         )
     }
 }
