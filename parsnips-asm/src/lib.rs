@@ -3,7 +3,7 @@
 use parsnips_inst::{Funct, Inst, Op};
 use parsnips_parser::{
     Argument, Ast, DataKind, DataValue, Entry, Instruction, Literal, NumLiteral, ParseMaybeNeg,
-    ParseNonNeg, Section,
+    ParseNonNeg, SectionKind,
 };
 
 extern crate alloc;
@@ -181,8 +181,8 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
     let mut initial_text_section: Option<u32> = None;
 
     for section in ast.sections {
-        match section {
-            Section::Data(entries) => {
+        match section.kind {
+            SectionKind::Data(entries) => {
                 if initial_section_data.is_none() {
                     initial_section_data = Some(true);
                     program.extend_from_slice(&new_jump(Op::J).to_le_bytes());
@@ -235,7 +235,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                     }
                 }
             }
-            Section::Text(entries) => {
+            SectionKind::Text(entries) => {
                 if initial_section_data.is_none() {
                     initial_section_data = Some(false);
                 }
