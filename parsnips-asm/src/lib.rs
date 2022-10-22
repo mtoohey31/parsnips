@@ -2,18 +2,17 @@
 
 use parsnips_inst::{Funct, Inst, Op};
 use parsnips_parser::{
-    ArgumentKind, Ast, DataKind, DataValue, EntryKind, Instruction, Literal, NumLiteral,
-    ParseMaybeNeg, ParseNonNeg, SectionKind,
+    ArgumentKind, Ast, DataDeclaration, DataKind, DataValue, EntryKind, Instruction, Literal,
+    NumLiteral, ParseMaybeNeg, ParseNonNeg, SectionKind,
 };
 
 extern crate alloc;
 use alloc::{string::String, vec::Vec};
 use ascii::{AsAsciiStr, AsAsciiStrError};
-use core::num::IntErrorKind;
+use core::{mem::size_of, num::IntErrorKind};
 use hashbrown::HashMap;
 use strum_macros::EnumString;
 
-// TODO: allow numerical register references
 #[derive(Debug, PartialEq, EnumString)]
 #[strum(serialize_all = "lowercase")]
 #[repr(u8)]
@@ -98,6 +97,15 @@ pub struct AssembleError<'a> {
     kind: AssembleErrorKind<'a>,
 }
 
+impl<'a> From<DataDeclaration<'a>> for AssembleError<'a> {
+    fn from(value: DataDeclaration<'a>) -> Self {
+        AssembleError {
+            pos: value.value_pos,
+            kind: AssembleErrorKind::IllegalDataKindValueCombination(value.kind, value.value),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum AssembleErrorKind<'a> {
     ExpectedArgument,
@@ -106,6 +114,7 @@ pub enum AssembleErrorKind<'a> {
     MisalignedOffset(u16),
     NoText,
     InvalidStrEscape(char),
+    IllegalDataKindValueCombination(DataKind, DataValue<'a>),
     NonAsciiStr(AsAsciiStrError),
     OverflowingShamt(NumLiteral<'a>),
     OverflowingLabelReference(u32),
@@ -168,6 +177,23 @@ macro_rules! expect_num_lit {
     }};
 }
 
+#[inline(always)]
+fn pad_len(len: usize) -> usize {
+    let pad_len = 4 - len % 4;
+    if pad_len == 4 {
+        0
+    } else {
+        pad_len
+    }
+}
+
+#[inline(always)]
+fn pad(prog: &mut Vec<u8>, pad_len: usize) {
+    for _ in 0..pad_len {
+        prog.push(0);
+    }
+}
+
 macro_rules! expect_label {
     ($args:expr) => {{
         let a = $args.remove(0);
@@ -180,6 +206,78 @@ macro_rules! expect_label {
             })
         }?
     }};
+}
+
+macro_rules! push_int {
+    ($prog:expr, $value_t:ident, $value_pos:expr, $value:expr) => {{
+        let len = size_of::<$value_t>();
+        let pad_len = pad_len(len);
+        $prog.reserve(len + pad_len);
+        $prog.extend_from_slice(
+            &$value_t::parse_maybe_neg($value)
+                .map_err(|e| AssembleError {
+                    pos: $value_pos,
+                    kind: AssembleErrorKind::ParseIntError(e),
+                })?
+                .to_le_bytes(),
+        );
+        pad(&mut $prog, pad_len);
+    }};
+}
+
+macro_rules! push_array {
+    ($prog:expr, $value_t:ident, $value_pos:expr, $value:expr, $size_pos:expr, $size:expr) => {{
+        let value = $value_t::parse_maybe_neg($value).map_err(|e| AssembleError {
+            pos: $value_pos,
+            kind: AssembleErrorKind::ParseIntError(e),
+        })?;
+        let size = usize::parse_non_neg($size).map_err(|e| AssembleError {
+            pos: $size_pos,
+            kind: AssembleErrorKind::ParseIntError(e),
+        })?;
+        let len = size_of::<$value_t>() * size;
+        let pad_len = pad_len(len);
+        $prog.reserve(len + pad_len);
+        let value_bytes = value.to_le_bytes();
+        for _ in 0..size {
+            $prog.extend_from_slice(&value_bytes);
+        }
+        pad(&mut $prog, pad_len);
+    }};
+}
+
+#[inline(always)]
+fn unescape(s: &str) -> Result<String, AssembleError> {
+    let mut unescaped = String::new();
+    let mut ci = s.chars().enumerate();
+    while let Some((pos, c)) = ci.next() {
+        unescaped.push(match c {
+            '\\' => match ci.next() {
+                Some((_, 't')) => '\t',
+                Some((_, 'n')) => '\n',
+                Some((_, '\\')) => '\\',
+                Some((_, c)) => {
+                    return Err(AssembleError {
+                        pos,
+                        kind: AssembleErrorKind::InvalidStrEscape(c),
+                    })
+                }
+                None => {
+                    // this error maybe isn't really the most
+                    // appropriate thing for this case, but this error
+                    // case shouldn't occur with a well-formed AST
+                    // produced by lex and parse anyways so...
+                    return Err(AssembleError {
+                        pos: pos + 1,
+                        kind: AssembleErrorKind::InvalidStrEscape(c),
+                    });
+                }
+            },
+            o => o,
+        })
+    }
+
+    Ok(unescaped)
 }
 
 const SYSCALL: Inst = (Op::SYSCALL as u32) << 26;
@@ -225,91 +323,80 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                     label_definitions.insert(entry.label, program.len());
                     match entry.value.kind {
                         DataKind::Word => match entry.value.value {
+                            DataValue::Int(value) => {
+                                push_int!(program, u32, entry.value.pos, value);
+                            }
                             DataValue::Array {
                                 value,
                                 size_pos,
                                 size,
                             } => {
-                                let value =
-                                    u32::parse_maybe_neg(value).map_err(|e| AssembleError {
-                                        pos: size_pos,
-                                        kind: AssembleErrorKind::ParseIntError(e),
-                                    })?;
-                                let size =
-                                    usize::parse_non_neg(size).map_err(|e| AssembleError {
-                                        pos: size_pos,
-                                        kind: AssembleErrorKind::ParseIntError(e),
-                                    })?;
-                                program.reserve(size * 4);
-                                let le_bytes = value.to_le_bytes();
-                                for _ in 0..size {
-                                    program.extend_from_slice(&le_bytes);
-                                }
+                                push_array!(program, u32, entry.value.pos, value, size_pos, size);
                             }
-                            DataValue::Int(value) => {
-                                program.extend_from_slice(
-                                    &u32::parse_maybe_neg(value)
-                                        .map_err(|e| AssembleError {
-                                            pos: entry.value.pos,
-                                            kind: AssembleErrorKind::ParseIntError(e),
-                                        })?
-                                        .to_le_bytes(),
-                                );
-                            }
-                            _ => todo!(),
+                            DataValue::String(_) => return Err(AssembleError::from(entry.value)),
                         },
-                        DataKind::HalfWord => todo!(),
-                        DataKind::Byte => todo!(),
-                        DataKind::Ascii => todo!(),
-                        DataKind::Asciiz => match entry.value.value {
-                            DataValue::String(value) => {
-                                let mut unescaped = String::new();
-                                let mut ci = value.chars().enumerate();
-                                while let Some((pos, c)) = ci.next() {
-                                    unescaped.push(match c {
-                                        '\\' => match ci.next() {
-                                            Some((_, 't')) => '\t',
-                                            Some((_, 'n')) => '\n',
-                                            Some((_, '\\')) => '\\',
-                                            Some((_, c)) => {
-                                                return Err(AssembleError {
-                                                    pos,
-                                                    kind: AssembleErrorKind::InvalidStrEscape(c),
-                                                })
-                                            }
-                                            None => {
-                                                // this error maybe isn't really the most
-                                                // appropriate thing for this case, but this error
-                                                // case shouldn't occur with a well-formed AST
-                                                // produced by lex and parse anyways so...
-                                                return Err(AssembleError {
-                                                    pos: pos + 1,
-                                                    kind: AssembleErrorKind::InvalidStrEscape(c),
-                                                });
-                                            }
-                                        },
-                                        o => o,
-                                    })
-                                }
-
-                                let str_bytes = unescaped
-                                    .as_ascii_str()
-                                    .map_err(|e| AssembleError {
+                        DataKind::HalfWord => match entry.value.value {
+                            DataValue::Int(value) => {
+                                push_int!(program, u16, entry.value.pos, value);
+                            }
+                            DataValue::Array {
+                                value,
+                                size_pos,
+                                size,
+                            } => {
+                                push_array!(program, u16, entry.value.pos, value, size_pos, size);
+                            }
+                            DataValue::String(_) => return Err(AssembleError::from(entry.value)),
+                        },
+                        DataKind::Byte => match entry.value.value {
+                            DataValue::Int(value) => {
+                                push_int!(program, u8, entry.value.pos, value);
+                            }
+                            DataValue::Array {
+                                value,
+                                size_pos,
+                                size,
+                            } => {
+                                push_array!(program, u8, entry.value.pos, value, size_pos, size);
+                            }
+                            DataValue::String(_) => return Err(AssembleError::from(entry.value)),
+                        },
+                        DataKind::Ascii => match entry.value.value {
+                            DataValue::String(s) => {
+                                let unescaped = unescape(s)?;
+                                let ascii_str =
+                                    unescaped.as_ascii_str().map_err(|e| AssembleError {
                                         pos: e.valid_up_to(),
                                         kind: AssembleErrorKind::NonAsciiStr(e),
-                                    })?
-                                    .as_bytes();
-                                program.extend_from_slice(str_bytes);
-                                // ensure word alignment is preserved for whatever comes next
-                                let mut padding_len = 4 - str_bytes.len() % 4;
-                                if padding_len == 4 {
-                                    padding_len = 0
-                                };
-                                for _ in 0..padding_len {
-                                    program.push(0);
-                                }
+                                    })?;
+                                let bytes = ascii_str.as_bytes();
+                                let pad_len = pad_len(bytes.len());
+                                program.reserve(bytes.len() + pad_len);
+                                program.extend_from_slice(bytes);
+                                pad(&mut program, pad_len);
                             }
-                            _ => todo!(),
+                            DataValue::Int(_) | DataValue::Array { .. } => {
+                                return Err(AssembleError::from(entry.value))
+                            }
+                        },
+                        DataKind::Asciiz => match entry.value.value {
+                            DataValue::String(s) => {
+                                let unescaped = unescape(s)?;
+                                let ascii_str =
+                                    unescaped.as_ascii_str().map_err(|e| AssembleError {
+                                        pos: e.valid_up_to(),
+                                        kind: AssembleErrorKind::NonAsciiStr(e),
+                                    })?;
+                                let bytes = ascii_str.as_bytes();
+                                // account for the required zero byte
+                                let pad_len = pad_len(bytes.len() + 1);
+                                program.reserve(bytes.len() + 1 + pad_len);
+                                program.extend_from_slice(bytes);
+                                pad(&mut program, pad_len + 1);
+                            }
+                            DataValue::Int(_) | DataValue::Array { .. } => {
+                                return Err(AssembleError::from(entry.value))
+                            }
                         },
                     }
                 }

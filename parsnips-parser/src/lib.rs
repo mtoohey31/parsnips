@@ -213,7 +213,7 @@ pub struct DataDeclaration<'a> {
 #[strum(serialize_all = "lowercase")]
 pub enum DataKind {
     Word,
-    #[strum(serialize = "hword")]
+    #[strum(serialize = "hword", serialize = "half")]
     HalfWord,
     Byte,
     Ascii,
