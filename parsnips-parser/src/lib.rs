@@ -35,7 +35,13 @@ pub enum SectionKind<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Entry<'a> {
+pub struct Entry<'a> {
+    pub pos: usize,
+    pub kind: EntryKind<'a>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum EntryKind<'a> {
     Label(&'a str),
     Instruction(Instruction<'a>),
 }
@@ -465,7 +471,10 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                         if Some(&TokenKind::Colon) == ti.peek().map(|t| &t.kind) {
                             // This is a label
                             ti.next().unwrap();
-                            entries.push(Entry::Label(i))
+                            entries.push(Entry {
+                                pos: t.pos,
+                                kind: EntryKind::Label(i),
+                            })
                         } else {
                             // This is an instruction
                             let mut inst = Instruction {
@@ -474,21 +483,27 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                             };
 
                             let pos = skip_whitespace!(ti, t.pos);
-                            let t = match ti.next() {
+                            let tn = match ti.next() {
                                 Some(t) => t,
                                 None => {
-                                    entries.push(Entry::Instruction(inst));
+                                    entries.push(Entry {
+                                        pos: t.pos,
+                                        kind: EntryKind::Instruction(inst),
+                                    });
                                     continue;
                                 }
                             };
-                            match t.kind {
+                            match tn.kind {
                                 TokenKind::Newline => {
-                                    entries.push(Entry::Instruction(inst));
+                                    entries.push(Entry {
+                                        pos: t.pos,
+                                        kind: EntryKind::Instruction(inst),
+                                    });
                                     continue;
                                 }
                                 TokenKind::Dollar => inst
                                     .arguments
-                                    .push(Argument::Register(expect_ident!(ti, t.pos)?.1)),
+                                    .push(Argument::Register(expect_ident!(ti, tn.pos)?.1)),
                                 TokenKind::Ident(i) => {
                                     inst.arguments.push(Argument::Label(i));
                                 }
@@ -568,7 +583,10 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                 }
                             }
 
-                            entries.push(Entry::Instruction(inst));
+                            entries.push(Entry {
+                                pos: t.pos,
+                                kind: EntryKind::Instruction(inst),
+                            });
                         }
                     }
                 };
@@ -598,38 +616,47 @@ mod tests {
                 sections: vec![Section {
                     pos: 6,
                     kind: SectionKind::Text(vec![
-                        Entry::Instruction(Instruction {
-                            name: "addi",
-                            arguments: vec![
-                                Argument::Register("t0"),
-                                Argument::Register("zero"),
-                                Argument::Literal(Literal::Num(NumLiteral {
-                                    negative: false,
-                                    radix: 10,
-                                    body: "13"
-                                }))
-                            ],
-                        }),
-                        Entry::Instruction(Instruction {
-                            name: "addi",
-                            arguments: vec![
-                                Argument::Register("t1"),
-                                Argument::Register("zero"),
-                                Argument::Literal(Literal::Num(NumLiteral {
-                                    negative: false,
-                                    radix: 10,
-                                    body: "26"
-                                }))
-                            ],
-                        }),
-                        Entry::Instruction(Instruction {
-                            name: "add",
-                            arguments: vec![
-                                Argument::Register("t2"),
-                                Argument::Register("t0"),
-                                Argument::Register("t1")
-                            ],
-                        })
+                        Entry {
+                            pos: 18,
+                            kind: EntryKind::Instruction(Instruction {
+                                name: "addi",
+                                arguments: vec![
+                                    Argument::Register("t0"),
+                                    Argument::Register("zero"),
+                                    Argument::Literal(Literal::Num(NumLiteral {
+                                        negative: false,
+                                        radix: 10,
+                                        body: "13"
+                                    }))
+                                ],
+                            })
+                        },
+                        Entry {
+                            pos: 44,
+                            kind: EntryKind::Instruction(Instruction {
+                                name: "addi",
+                                arguments: vec![
+                                    Argument::Register("t1"),
+                                    Argument::Register("zero"),
+                                    Argument::Literal(Literal::Num(NumLiteral {
+                                        negative: false,
+                                        radix: 10,
+                                        body: "26"
+                                    }))
+                                ],
+                            })
+                        },
+                        Entry {
+                            pos: 70,
+                            kind: EntryKind::Instruction(Instruction {
+                                name: "add",
+                                arguments: vec![
+                                    Argument::Register("t2"),
+                                    Argument::Register("t0"),
+                                    Argument::Register("t1")
+                                ],
+                            })
+                        }
                     ])
                 }]
             }
@@ -681,189 +708,261 @@ mod tests {
                     Section {
                         pos: 269,
                         kind: SectionKind::Text(vec![
-                            Entry::Instruction(Instruction {
-                                name: "la",
-                                arguments: vec![Argument::Register("t0"), Argument::Label("fibs")]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "la",
-                                arguments: vec![Argument::Register("t5"), Argument::Label("size")]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "lw",
-                                arguments: vec![
-                                    Argument::Register("t5"),
-                                    Argument::OffsetRegister {
-                                        offset: NumLiteral {
+                            Entry {
+                                pos: 281,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "la",
+                                    arguments: vec![
+                                        Argument::Register("t0"),
+                                        Argument::Label("fibs")
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 333,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "la",
+                                    arguments: vec![
+                                        Argument::Register("t5"),
+                                        Argument::Label("size")
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 393,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "lw",
+                                    arguments: vec![
+                                        Argument::Register("t5"),
+                                        Argument::OffsetRegister {
+                                            offset: NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "0"
+                                            },
+                                            register: "t5"
+                                        }
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 439,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "li",
+                                    arguments: vec![
+                                        Argument::Register("t2"),
+                                        Argument::Literal(Literal::Num(NumLiteral {
                                             negative: false,
                                             radix: 10,
-                                            body: "0"
-                                        },
-                                        register: "t5"
-                                    }
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "li",
-                                arguments: vec![
-                                    Argument::Register("t2"),
-                                    Argument::Literal(Literal::Num(NumLiteral {
-                                        negative: false,
-                                        radix: 10,
-                                        body: "1"
-                                    }))
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "sw",
-                                arguments: vec![
-                                    Argument::Register("t2"),
-                                    Argument::OffsetRegister {
-                                        offset: NumLiteral {
-                                            negative: false,
+                                            body: "1"
+                                        }))
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 503,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "sw",
+                                    arguments: vec![
+                                        Argument::Register("t2"),
+                                        Argument::OffsetRegister {
+                                            offset: NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "0"
+                                            },
+                                            register: "t0"
+                                        }
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 542,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "sw",
+                                    arguments: vec![
+                                        Argument::Register("t2"),
+                                        Argument::OffsetRegister {
+                                            offset: NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "4"
+                                            },
+                                            register: "t0"
+                                        }
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 588,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "addi",
+                                    arguments: vec![
+                                        Argument::Register("t1"),
+                                        Argument::Register("t5"),
+                                        Argument::Literal(Literal::Num(NumLiteral {
+                                            negative: true,
                                             radix: 10,
-                                            body: "0"
-                                        },
-                                        register: "t0"
-                                    }
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "sw",
-                                arguments: vec![
-                                    Argument::Register("t2"),
-                                    Argument::OffsetRegister {
-                                        offset: NumLiteral {
+                                            body: "2"
+                                        }))
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 658,
+                                kind: EntryKind::Label("loop")
+                            },
+                            Entry {
+                                pos: 664,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "lw",
+                                    arguments: vec![
+                                        Argument::Register("t3"),
+                                        Argument::OffsetRegister {
+                                            offset: NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "0"
+                                            },
+                                            register: "t0"
+                                        }
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 721,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "lw",
+                                    arguments: vec![
+                                        Argument::Register("t4"),
+                                        Argument::OffsetRegister {
+                                            offset: NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "4"
+                                            },
+                                            register: "t0"
+                                        }
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 779,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "add",
+                                    arguments: vec![
+                                        Argument::Register("t2"),
+                                        Argument::Register("t3"),
+                                        Argument::Register("t4")
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 829,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "sw",
+                                    arguments: vec![
+                                        Argument::Register("t2"),
+                                        Argument::OffsetRegister {
+                                            offset: NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "8"
+                                            },
+                                            register: "t0"
+                                        }
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 897,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "addi",
+                                    arguments: vec![
+                                        Argument::Register("t0"),
+                                        Argument::Register("t0"),
+                                        Argument::Literal(Literal::Num(NumLiteral {
                                             negative: false,
                                             radix: 10,
                                             body: "4"
-                                        },
-                                        register: "t0"
-                                    }
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "addi",
-                                arguments: vec![
-                                    Argument::Register("t1"),
-                                    Argument::Register("t5"),
-                                    Argument::Literal(Literal::Num(NumLiteral {
-                                        negative: true,
-                                        radix: 10,
-                                        body: "2"
-                                    }))
-                                ]
-                            }),
-                            Entry::Label("loop"),
-                            Entry::Instruction(Instruction {
-                                name: "lw",
-                                arguments: vec![
-                                    Argument::Register("t3"),
-                                    Argument::OffsetRegister {
-                                        offset: NumLiteral {
+                                        }))
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 967,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "addi",
+                                    arguments: vec![
+                                        Argument::Register("t1"),
+                                        Argument::Register("t1"),
+                                        Argument::Literal(Literal::Num(NumLiteral {
+                                            negative: true,
+                                            radix: 10,
+                                            body: "1"
+                                        }))
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 1020,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "bgtz",
+                                    arguments: vec![
+                                        Argument::Register("t1"),
+                                        Argument::Label("loop")
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 1078,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "la",
+                                    arguments: vec![
+                                        Argument::Register("a0"),
+                                        Argument::Label("fibs")
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 1141,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "add",
+                                    arguments: vec![
+                                        Argument::Register("a1"),
+                                        Argument::Register("zero"),
+                                        Argument::Register("t5")
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 1204,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "jal",
+                                    arguments: vec![Argument::Label("print")]
+                                })
+                            },
+                            Entry {
+                                pos: 1255,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "li",
+                                    arguments: vec![
+                                        Argument::Register("v0"),
+                                        Argument::Literal(Literal::Num(NumLiteral {
                                             negative: false,
                                             radix: 10,
-                                            body: "0"
-                                        },
-                                        register: "t0"
-                                    }
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "lw",
-                                arguments: vec![
-                                    Argument::Register("t4"),
-                                    Argument::OffsetRegister {
-                                        offset: NumLiteral {
-                                            negative: false,
-                                            radix: 10,
-                                            body: "4"
-                                        },
-                                        register: "t0"
-                                    }
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "add",
-                                arguments: vec![
-                                    Argument::Register("t2"),
-                                    Argument::Register("t3"),
-                                    Argument::Register("t4")
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "sw",
-                                arguments: vec![
-                                    Argument::Register("t2"),
-                                    Argument::OffsetRegister {
-                                        offset: NumLiteral {
-                                            negative: false,
-                                            radix: 10,
-                                            body: "8"
-                                        },
-                                        register: "t0"
-                                    }
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "addi",
-                                arguments: vec![
-                                    Argument::Register("t0"),
-                                    Argument::Register("t0"),
-                                    Argument::Literal(Literal::Num(NumLiteral {
-                                        negative: false,
-                                        radix: 10,
-                                        body: "4"
-                                    }))
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "addi",
-                                arguments: vec![
-                                    Argument::Register("t1"),
-                                    Argument::Register("t1"),
-                                    Argument::Literal(Literal::Num(NumLiteral {
-                                        negative: true,
-                                        radix: 10,
-                                        body: "1"
-                                    }))
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "bgtz",
-                                arguments: vec![Argument::Register("t1"), Argument::Label("loop")]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "la",
-                                arguments: vec![Argument::Register("a0"), Argument::Label("fibs")]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "add",
-                                arguments: vec![
-                                    Argument::Register("a1"),
-                                    Argument::Register("zero"),
-                                    Argument::Register("t5")
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "jal",
-                                arguments: vec![Argument::Label("print")]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "li",
-                                arguments: vec![
-                                    Argument::Register("v0"),
-                                    Argument::Literal(Literal::Num(NumLiteral {
-                                        negative: false,
-                                        radix: 10,
-                                        body: "10"
-                                    }))
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "syscall",
-                                arguments: vec![]
-                            })
+                                            body: "10"
+                                        }))
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 1306,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "syscall",
+                                    arguments: vec![]
+                                })
+                            }
                         ])
                     },
                     Section {
@@ -888,123 +987,183 @@ mod tests {
                     Section {
                         pos: 1534,
                         kind: SectionKind::Text(vec![
-                            Entry::Label("print"),
-                            Entry::Instruction(Instruction {
-                                name: "add",
-                                arguments: vec![
-                                    Argument::Register("t0"),
-                                    Argument::Register("zero"),
-                                    Argument::Register("a0")
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "add",
-                                arguments: vec![
-                                    Argument::Register("t1"),
-                                    Argument::Register("zero"),
-                                    Argument::Register("a1")
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "la",
-                                arguments: vec![Argument::Register("a0"), Argument::Label("head")]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "li",
-                                arguments: vec![
-                                    Argument::Register("v0"),
-                                    Argument::Literal(Literal::Num(NumLiteral {
-                                        negative: false,
-                                        radix: 10,
-                                        body: "4"
-                                    }))
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "syscall",
-                                arguments: vec![]
-                            }),
-                            Entry::Label("out"),
-                            Entry::Instruction(Instruction {
-                                name: "lw",
-                                arguments: vec![
-                                    Argument::Register("a0"),
-                                    Argument::OffsetRegister {
-                                        offset: NumLiteral {
+                            Entry {
+                                pos: 1540,
+                                kind: EntryKind::Label("print")
+                            },
+                            Entry {
+                                pos: 1546,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "add",
+                                    arguments: vec![
+                                        Argument::Register("t0"),
+                                        Argument::Register("zero"),
+                                        Argument::Register("a0")
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 1602,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "add",
+                                    arguments: vec![
+                                        Argument::Register("t1"),
+                                        Argument::Register("zero"),
+                                        Argument::Register("a1")
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 1670,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "la",
+                                    arguments: vec![
+                                        Argument::Register("a0"),
+                                        Argument::Label("head")
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 1730,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "li",
+                                    arguments: vec![
+                                        Argument::Register("v0"),
+                                        Argument::Literal(Literal::Num(NumLiteral {
                                             negative: false,
                                             radix: 10,
-                                            body: "0"
-                                        },
-                                        register: "t0"
-                                    }
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "li",
-                                arguments: vec![
-                                    Argument::Register("v0"),
-                                    Argument::Literal(Literal::Num(NumLiteral {
-                                        negative: false,
-                                        radix: 10,
-                                        body: "1"
-                                    }))
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "syscall",
-                                arguments: vec![]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "la",
-                                arguments: vec![Argument::Register("a0"), Argument::Label("space")]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "li",
-                                arguments: vec![
-                                    Argument::Register("v0"),
-                                    Argument::Literal(Literal::Num(NumLiteral {
-                                        negative: false,
-                                        radix: 10,
-                                        body: "4"
-                                    }))
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "syscall",
-                                arguments: vec![]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "addi",
-                                arguments: vec![
-                                    Argument::Register("t0"),
-                                    Argument::Register("t0"),
-                                    Argument::Literal(Literal::Num(NumLiteral {
-                                        negative: false,
-                                        radix: 10,
-                                        body: "4"
-                                    }))
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "addi",
-                                arguments: vec![
-                                    Argument::Register("t1"),
-                                    Argument::Register("t1"),
-                                    Argument::Literal(Literal::Num(NumLiteral {
-                                        negative: true,
-                                        radix: 10,
-                                        body: "1"
-                                    }))
-                                ]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "bgtz",
-                                arguments: vec![Argument::Register("t1"), Argument::Label("out")]
-                            }),
-                            Entry::Instruction(Instruction {
-                                name: "jr",
-                                arguments: vec![Argument::Register("ra")]
-                            })
+                                            body: "4"
+                                        }))
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 1789,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "syscall",
+                                    arguments: vec![]
+                                })
+                            },
+                            Entry {
+                                pos: 1827,
+                                kind: EntryKind::Label("out")
+                            },
+                            Entry {
+                                pos: 1833,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "lw",
+                                    arguments: vec![
+                                        Argument::Register("a0"),
+                                        Argument::OffsetRegister {
+                                            offset: NumLiteral {
+                                                negative: false,
+                                                radix: 10,
+                                                body: "0"
+                                            },
+                                            register: "t0"
+                                        }
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 1897,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "li",
+                                    arguments: vec![
+                                        Argument::Register("v0"),
+                                        Argument::Literal(Literal::Num(NumLiteral {
+                                            negative: false,
+                                            radix: 10,
+                                            body: "1"
+                                        }))
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 1957,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "syscall",
+                                    arguments: vec![]
+                                })
+                            },
+                            Entry {
+                                pos: 2010,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "la",
+                                    arguments: vec![
+                                        Argument::Register("a0"),
+                                        Argument::Label("space")
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 2075,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "li",
+                                    arguments: vec![
+                                        Argument::Register("v0"),
+                                        Argument::Literal(Literal::Num(NumLiteral {
+                                            negative: false,
+                                            radix: 10,
+                                            body: "4"
+                                        }))
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 2134,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "syscall",
+                                    arguments: vec![]
+                                })
+                            },
+                            Entry {
+                                pos: 2178,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "addi",
+                                    arguments: vec![
+                                        Argument::Register("t0"),
+                                        Argument::Register("t0"),
+                                        Argument::Literal(Literal::Num(NumLiteral {
+                                            negative: false,
+                                            radix: 10,
+                                            body: "4"
+                                        }))
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 2226,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "addi",
+                                    arguments: vec![
+                                        Argument::Register("t1"),
+                                        Argument::Register("t1"),
+                                        Argument::Literal(Literal::Num(NumLiteral {
+                                            negative: true,
+                                            radix: 10,
+                                            body: "1"
+                                        }))
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 2279,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "bgtz",
+                                    arguments: vec![
+                                        Argument::Register("t1"),
+                                        Argument::Label("out")
+                                    ]
+                                })
+                            },
+                            Entry {
+                                pos: 2332,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name: "jr",
+                                    arguments: vec![Argument::Register("ra")]
+                                })
+                            }
                         ])
                     }
                 ]

@@ -2,7 +2,7 @@
 
 use parsnips_inst::{Funct, Inst, Op};
 use parsnips_parser::{
-    Argument, Ast, DataKind, DataValue, Entry, Instruction, Literal, NumLiteral, ParseMaybeNeg,
+    Argument, Ast, DataKind, DataValue, EntryKind, Instruction, Literal, NumLiteral, ParseMaybeNeg,
     ParseNonNeg, SectionKind,
 };
 
@@ -244,13 +244,13 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                 }
 
                 for entry in entries {
-                    match entry {
-                        Entry::Label(name) => {
+                    match entry.kind {
+                        EntryKind::Label(name) => {
                             if label_definitions.insert(name, program.len()).is_some() {
                                 return Err(AssembleError::RedeclaredLabel(name));
                             }
                         }
-                        Entry::Instruction(Instruction {
+                        EntryKind::Instruction(Instruction {
                             name,
                             mut arguments,
                         }) => {
