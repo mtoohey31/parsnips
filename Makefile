@@ -1,6 +1,7 @@
 ASM_DEPS=parsnips-asm/Cargo.toml Cargo.lock parsnips-asm/src/**
 CLI_DEPS=parsnips-cli/Cargo.toml Cargo.lock parsnips-cli/src/**
 EMU_DEPS=parsnips-emu/Cargo.toml Cargo.lock parsnips-emu/src/**
+INST_DEPS=parsnips-inst/Cargo.toml Cargo.lock parsnips-inst/src/**
 PARSER_DEPS=parsnips-parser/Cargo.toml Cargo.lock parsnips-parser/src/**
 
 .PHONY: all
@@ -37,10 +38,10 @@ test-web: parsnips-web/node_modules parsnips-web/node_modules/parsnips-emu
 .PHONY: build
 build: parsnips-web/dist target/release/par
 
-target/release/par: $(CLI_DEPS) $(EMU_DEPS) $(PARSER_DEPS)
+target/release/par: $(CLI_DEPS) $(EMU_DEPS) $(INST_DEPS) $(PARSER_DEPS)
 	cargo build -p parsnips-cli --release
 
-parsnips-emu/pkg: $(EMU_DEPS) $(PARSER_DEPS)
+parsnips-emu/pkg: $(EMU_DEPS) $(INST_DEPS) $(PARSER_DEPS)
 	cd parsnips-emu && wasm-pack build --target web --mode no-install
 	rm -rf parsnips-web/node_modules/parsnips-emu
 
@@ -54,15 +55,22 @@ parsnips-web/node_modules: parsnips-web/package.json parsnips-web/pnpm-lock.yaml
 parsnips-web/dist: parsnips-emu/pkg parsnips-web/node_modules parsnips-web/node_modules/parsnips-emu parsnips-web/*.* parsnips-web/src/**
 	cd parsnips-web && pnpm run build
 
+.PHONY: cov-parser
+cov-parser: $(PARSER_DEPS)
+	export LLVM_PROFILE_DIR="$$(mktemp -d)" && \
+		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test -p parsnips-parser && \
+		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \
+		rm -rf "$$LLVM_PROFILE_DIR"
+
 .PHONY: cov-asm
-cov-asm: $(ASM_DEPS) $(PARSER_DEPS)
+cov-asm: $(ASM_DEPS) $(INST_DEPS) $(PARSER_DEPS)
 	export LLVM_PROFILE_DIR="$$(mktemp -d)" && \
 		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test -p parsnips-asm && \
 		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \
 		rm -rf "$$LLVM_PROFILE_DIR"
 
 .PHONY: cov-emu
-cov-emu: $(EMU_DEPS) $(PARSER_DEPS)
+cov-emu: $(EMU_DEPS) $(INST_DEPS) $(PARSER_DEPS)
 	export LLVM_PROFILE_DIR="$$(mktemp -d)" && \
 		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test -p parsnips-emu && \
 		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \
