@@ -336,21 +336,12 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
     let mut a = Ast::new();
     let mut cs: Option<Section> = None;
 
-    // TODO: elide comments on a type level, i.e. maybe have a second level of
-    // nested enums for whether the token is a comment, and drill down to the
-    // set of enums that contain no comments here so we don't have to have
-    // panics in match statements for when comments are encountered all over the
-    // place.
     let mut ti = lex(input)
         .map_err(|e| ParseError {
             pos: e.pos,
             kind: ParseErrorKind::LexError(e),
         })?
         .into_iter()
-        .filter(|t| match t.kind {
-            TokenKind::Comment(_) => false,
-            _ => true,
-        })
         .peekable();
 
     while let Some(t) = ti.next() {
@@ -448,7 +439,6 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                                 let pos = skip_whitespace!(ti, t.pos);
                                                 match expect_literal!(ti, pos)? {
                                                     Literal::Num(size) => {
-                                                        // TODO: translate and populate this
                                                         DataValue::Array { value, size }
                                                     }
                                                     Literal::Char(_) => todo!(),
@@ -462,14 +452,10 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                             TokenKind::Newline => DataValue::Int(value),
                                             TokenKind::Ident(_) => todo!(),
                                             TokenKind::Literal(_) => todo!(),
-
-                                            TokenKind::Comment(_) => panic!(),
                                         }
                                     }
                                     TokenKind::Literal(Literal::Char(_)) => todo!(),
                                     TokenKind::Literal(Literal::Str(s)) => DataValue::String(s),
-
-                                    TokenKind::Comment(_) => panic!(),
                                 },
                             },
                         })
@@ -530,8 +516,6 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                 TokenKind::OpenParen => todo!(),
                                 TokenKind::CloseParen => todo!(),
                                 TokenKind::Whitespace => todo!(),
-
-                                TokenKind::Comment(_) => panic!(),
                             }
 
                             loop {
@@ -608,8 +592,6 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                     TokenKind::Whitespace => todo!(),
                                     TokenKind::Newline => todo!(),
                                     TokenKind::Literal(_) => todo!(),
-
-                                    TokenKind::Comment(_) => panic!(),
                                 }
                             }
 
@@ -622,8 +604,6 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                 };
             }
             TokenKind::Literal(_) => todo!(),
-            // Shouldn't be possible because we're filtering out comments above
-            TokenKind::Comment(_) => panic!(),
         }
     }
     if let Some(s) = cs {
@@ -722,8 +702,6 @@ mod tests {
 
     #[test]
     fn fib() {
-        // TODO: update this to include the contents of literals and other
-        // missing data
         assert_eq!(
             parse(include_str!("../../test/fib.asm")).unwrap(),
             Ast {

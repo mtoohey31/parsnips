@@ -20,7 +20,6 @@ pub enum TokenKind<'a> {
     Whitespace,
     Newline,
     Ident(&'a str),
-    Comment(&'a str),
     Literal(Literal<'a>),
 }
 
@@ -205,12 +204,9 @@ pub fn lex<'a>(input: &'a str) -> Result<Vec<Token<'a>>, LexError> {
                     kind: LexErrorKind::UnterminatedStr,
                 });
             }
-            '#' => tokens.push(Token {
-                pos,
-                kind: TokenKind::Comment(
-                    &input[pos + 1..failing_pos!(pos, ci, |c| !is_newline(c))],
-                ),
-            }),
+            '#' => {
+                failing_pos!(pos, ci, |c| !is_newline(c));
+            }
             '.' => tokens.push(Token {
                 pos,
                 kind: TokenKind::Dot,
@@ -481,13 +477,7 @@ mod tests {
 
     #[test]
     fn comment() {
-        assert_eq!(
-            lex("# a comment").unwrap(),
-            vec![Token {
-                pos: 0,
-                kind: TokenKind::Comment(" a comment")
-            }]
-        )
+        assert_eq!(lex("# a comment").unwrap(), vec![])
     }
 
     #[test]
