@@ -12,12 +12,14 @@ use strum_macros::EnumString;
 #[derive(Debug, PartialEq, Eq)]
 pub struct Ast<'a> {
     pub sections: Vec<Section<'a>>,
+    pub eof_pos: usize,
 }
 
 impl Ast<'_> {
-    fn new() -> Self {
+    fn new(eof_pos: usize) -> Self {
         Self {
             sections: Vec::new(),
+            eof_pos,
         }
     }
 }
@@ -340,7 +342,7 @@ macro_rules! skip_at_least_one_whitespace {
 }
 
 pub fn parse(input: &str) -> Result<Ast, ParseError> {
-    let mut a = Ast::new();
+    let mut a = Ast::new(input.len());
     let mut cs: Option<Section> = None;
 
     let mut ti = lex(input)
@@ -733,7 +735,8 @@ mod tests {
                             })
                         }
                     ])
-                }]
+                }],
+                eof_pos: 88
             }
         );
     }
@@ -1494,7 +1497,8 @@ mod tests {
                             }
                         ])
                     }
-                ]
+                ],
+                eof_pos: 2365
             }
         );
     }

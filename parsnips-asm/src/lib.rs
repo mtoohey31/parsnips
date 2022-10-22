@@ -92,9 +92,14 @@ fn new_jump(op: Op) -> Inst {
     (op as u32) << 26
 }
 
-// TODO: include location of error
 #[derive(Debug, PartialEq, Eq)]
-pub enum AssembleError<'a> {
+pub struct AssembleError<'a> {
+    pub pos: usize,
+    kind: AssembleErrorKind<'a>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum AssembleErrorKind<'a> {
     ExpectedArgument,
     InvalidArgument(ArgumentKind<'a>),
     InvalidDestination,
@@ -112,44 +117,66 @@ pub enum AssembleError<'a> {
 }
 
 macro_rules! assert_nargs {
-    ($args:expr, $n:expr) => {{
+    ($args:expr, $n:expr, $end:expr) => {{
         if $args.len() < $n {
-            return Err(AssembleError::ExpectedArgument);
+            return Err(AssembleError {
+                pos: $end,
+                kind: AssembleErrorKind::ExpectedArgument,
+            });
         } else if $n < $args.len() {
-            return Err(AssembleError::UnexpectedArgument($args.remove($n).kind));
+            let a = $args.remove($n);
+            return Err(AssembleError {
+                pos: a.pos,
+                kind: AssembleErrorKind::UnexpectedArgument(a.kind),
+            });
         }
     }};
 }
 
 macro_rules! expect_reg {
     ($args:expr) => {{
-        let a = $args.remove(0).kind;
-        if let ArgumentKind::Register(name) = a {
-            Ok(Reg::try_from(name).map_err(|_| AssembleError::UnknownReg(name))?)
+        let a = $args.remove(0);
+        if let ArgumentKind::Register(name) = a.kind {
+            Ok((
+                Reg::try_from(name).map_err(|_| AssembleError {
+                    pos: a.pos,
+                    kind: AssembleErrorKind::UnknownReg(name),
+                })?,
+                a.pos,
+            ))
         } else {
-            Err(AssembleError::InvalidArgument(a))
+            Err(AssembleError {
+                pos: a.pos,
+                kind: AssembleErrorKind::InvalidArgument(a.kind),
+            })
         }?
     }};
 }
 
 macro_rules! expect_num_lit {
     ($args:expr) => {{
-        let a = $args.remove(0).kind;
-        if let ArgumentKind::Literal(Literal::Num(lit)) = a {
-            Ok(lit)
+        let a = $args.remove(0);
+        if let ArgumentKind::Literal(Literal::Num(lit)) = a.kind {
+            Ok((lit, a.pos))
         } else {
-            Err(AssembleError::InvalidArgument(a))
+            Err(AssembleError {
+                pos: a.pos,
+                kind: AssembleErrorKind::InvalidArgument(a.kind),
+            })
         }?
     }};
 }
 
 macro_rules! expect_label {
     ($args:expr) => {{
-        let a = $args.remove(0).kind;
-        if let ArgumentKind::Label(lit) = a {
-            Ok(lit)
+        let a = $args.remove(0);
+        if let ArgumentKind::Label(lit) = a.kind {
+            Ok((lit, a.pos))
         } else {
-            Err(AssembleError::InvalidArgument(a))
+            Err(AssembleError {
+                pos: a.pos,
+                kind: AssembleErrorKind::InvalidArgument(a.kind),
+            })
         }?
     }};
 }
@@ -159,7 +186,10 @@ const SYSCALL: Inst = (Op::SYSCALL as u32) << 26;
 #[derive(Debug)]
 struct LabelReference<'a> {
     ident: &'a str,
+    // the byte index within the program
     location: usize,
+    // the character index within the source code
+    pos: usize,
     kind: ReferenceKind,
 }
 
@@ -178,7 +208,9 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
     let mut label_definitions = HashMap::new();
     let mut label_references = Vec::new();
     let mut initial_section_data: Option<bool> = None;
-    let mut initial_text_section: Option<u32> = None;
+    // an optional tuple of u32 byte index within the program and usize character index within the
+    // source code
+    let mut initial_text_section: Option<(u32, usize)> = None;
 
     for section in ast.sections {
         match section.kind {
@@ -192,11 +224,21 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                     label_definitions.insert(entry.label, program.len());
                     match entry.value.kind {
                         DataKind::Word => match entry.value.value {
-                            DataValue::Array { value, size, .. } => {
-                                let value = u32::parse_maybe_neg(value)
-                                    .map_err(AssembleError::ParseIntError)?;
-                                let size = usize::parse_non_neg(size)
-                                    .map_err(AssembleError::ParseIntError)?;
+                            DataValue::Array {
+                                value,
+                                size_pos,
+                                size,
+                            } => {
+                                let value =
+                                    u32::parse_maybe_neg(value).map_err(|e| AssembleError {
+                                        pos: size_pos,
+                                        kind: AssembleErrorKind::ParseIntError(e),
+                                    })?;
+                                let size =
+                                    usize::parse_non_neg(size).map_err(|e| AssembleError {
+                                        pos: size_pos,
+                                        kind: AssembleErrorKind::ParseIntError(e),
+                                    })?;
                                 program.reserve(size * 4);
                                 let le_bytes = value.to_le_bytes();
                                 for _ in 0..size {
@@ -206,7 +248,10 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                             DataValue::Int(value) => {
                                 program.extend_from_slice(
                                     &u32::parse_maybe_neg(value)
-                                        .map_err(AssembleError::ParseIntError)?
+                                        .map_err(|e| AssembleError {
+                                            pos: entry.value.pos,
+                                            kind: AssembleErrorKind::ParseIntError(e),
+                                        })?
                                         .to_le_bytes(),
                                 );
                             }
@@ -221,7 +266,10 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                 let unescaped = value.replace("\\n", "\n");
                                 let str_bytes = unescaped
                                     .as_ascii_str()
-                                    .map_err(|err| AssembleError::NonAsciiStr(err))?
+                                    .map_err(|e| AssembleError {
+                                        pos: e.valid_up_to(),
+                                        kind: AssembleErrorKind::NonAsciiStr(e),
+                                    })?
                                     .as_bytes();
                                 program.extend_from_slice(str_bytes);
                                 // TODO: revisit this, is this how other things do this?
@@ -240,20 +288,23 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                     initial_section_data = Some(false);
                 }
                 if initial_text_section.is_none() {
-                    initial_text_section = Some(program.len() as u32);
+                    initial_text_section = Some((program.len() as u32, section.pos));
                 }
 
                 for entry in entries {
                     match entry.kind {
                         EntryKind::Label(name) => {
                             if label_definitions.insert(name, program.len()).is_some() {
-                                return Err(AssembleError::RedeclaredLabel(name));
+                                return Err(AssembleError {
+                                    pos: entry.pos,
+                                    kind: AssembleErrorKind::RedeclaredLabel(name),
+                                });
                             }
                         }
                         EntryKind::Instruction(Instruction {
                             name,
                             args: mut arguments,
-                            ..
+                            end_pos,
                         }) => {
                             if let Ok(op) = Op::try_from(name) {
                                 let inst = match op {
@@ -264,147 +315,217 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                     | Op::XORI
                                     | Op::SLTI
                                     | Op::SLTIU => {
-                                        assert_nargs!(arguments, 3);
-                                        match expect_reg!(arguments) {
+                                        assert_nargs!(arguments, 3, end_pos);
+                                        let (reg, pos) = expect_reg!(arguments);
+                                        match reg {
                                             Reg::Zero => {
-                                                return Err(AssembleError::InvalidDestination)
+                                                return Err(AssembleError {
+                                                    pos,
+                                                    kind: AssembleErrorKind::InvalidDestination,
+                                                })
                                             }
-                                            rt => new_arith_log_i(
-                                                op,
-                                                expect_reg!(arguments),
-                                                rt,
-                                                u16::parse_maybe_neg(expect_num_lit!(arguments))
-                                                    .map_err(AssembleError::ParseIntError)?,
-                                            ),
+                                            rt => {
+                                                let rs = expect_reg!(arguments).0;
+                                                let (lit, pos) = expect_num_lit!(arguments);
+                                                new_arith_log_i(
+                                                    op,
+                                                    rs,
+                                                    rt,
+                                                    u16::parse_maybe_neg(lit).map_err(|e| {
+                                                        AssembleError {
+                                                            pos,
+                                                            kind: AssembleErrorKind::ParseIntError(
+                                                                e,
+                                                            ),
+                                                        }
+                                                    })?,
+                                                )
+                                            }
                                         }
                                     }
 
                                     Op::LHI | Op::LLO => {
-                                        assert_nargs!(arguments, 2);
-                                        match expect_reg!(arguments) {
+                                        assert_nargs!(arguments, 2, end_pos);
+                                        let (reg, pos) = expect_reg!(arguments);
+                                        let (lit, lit_pos) = expect_num_lit!(arguments);
+                                        match reg {
                                             Reg::Zero => {
-                                                return Err(AssembleError::InvalidDestination);
+                                                return Err(AssembleError {
+                                                    pos,
+                                                    kind: AssembleErrorKind::InvalidDestination,
+                                                });
                                             }
                                             rt => new_load_i(
                                                 op,
                                                 rt,
-                                                u16::parse_maybe_neg(expect_num_lit!(arguments))
-                                                    .map_err(AssembleError::ParseIntError)?,
+                                                u16::parse_maybe_neg(lit).map_err(|e| {
+                                                    AssembleError {
+                                                        pos: lit_pos,
+                                                        kind: AssembleErrorKind::ParseIntError(e),
+                                                    }
+                                                })?,
                                             ),
                                         }
                                     }
 
                                     Op::BEQ | Op::BNE => {
-                                        assert_nargs!(arguments, 3);
+                                        assert_nargs!(arguments, 3, end_pos);
                                         let (rs, rt) =
-                                            (expect_reg!(arguments), expect_reg!(arguments));
+                                            (expect_reg!(arguments).0, expect_reg!(arguments).0);
+                                        let (ident, pos) = expect_label!(arguments);
                                         label_references.push(LabelReference {
-                                            ident: expect_label!(arguments),
+                                            ident,
                                             location: program.len(),
+                                            pos,
                                             kind: ReferenceKind::Imm,
                                         });
                                         new_branch(op, rs, rt)
                                     }
 
                                     Op::BGTZ | Op::BLEZ => {
-                                        assert_nargs!(arguments, 2);
-                                        let rs = expect_reg!(arguments);
+                                        assert_nargs!(arguments, 2, end_pos);
+                                        let rs = expect_reg!(arguments).0;
+                                        let (ident, pos) = expect_label!(arguments);
                                         label_references.push(LabelReference {
-                                            ident: expect_label!(arguments),
+                                            ident,
                                             location: program.len(),
+                                            pos,
                                             kind: ReferenceKind::Imm,
                                         });
                                         new_branch_z(op, rs)
                                     }
 
                                     Op::LB | Op::LBU | Op::SB => {
-                                        assert_nargs!(arguments, 2);
-                                        let rt = expect_reg!(arguments);
-                                        let a = arguments.remove(0).kind;
+                                        assert_nargs!(arguments, 2, end_pos);
+                                        let rt = expect_reg!(arguments).0;
+                                        let a = arguments.remove(0);
                                         if let ArgumentKind::OffsetRegister {
                                             offset,
                                             register,
-                                            ..
-                                        } = a
+                                            register_pos,
+                                        } = a.kind
                                         {
                                             new_load_store(
                                                 op,
-                                                Reg::try_from(register)
-                                                    .map_err(|_| AssembleError::UnknownReg(name))?,
+                                                Reg::try_from(register).map_err(|_| {
+                                                    AssembleError {
+                                                        pos: register_pos,
+                                                        kind: AssembleErrorKind::UnknownReg(name),
+                                                    }
+                                                })?,
                                                 rt,
-                                                u16::parse_maybe_neg(offset)
-                                                    .map_err(AssembleError::ParseIntError)?,
+                                                u16::parse_maybe_neg(offset).map_err(|e| {
+                                                    AssembleError {
+                                                        pos: a.pos,
+                                                        kind: AssembleErrorKind::ParseIntError(e),
+                                                    }
+                                                })?,
                                             )
                                         } else {
-                                            return Err(AssembleError::UnexpectedArgument(a));
+                                            return Err(AssembleError {
+                                                pos: a.pos,
+                                                kind: AssembleErrorKind::UnexpectedArgument(a.kind),
+                                            });
                                         }
                                     }
 
                                     Op::LH | Op::LHU | Op::SH => {
-                                        assert_nargs!(arguments, 2);
-                                        let rt = expect_reg!(arguments);
-                                        let a = arguments.remove(0).kind;
+                                        assert_nargs!(arguments, 2, end_pos);
+                                        let rt = expect_reg!(arguments).0;
+                                        let a = arguments.remove(0);
                                         if let ArgumentKind::OffsetRegister {
                                             offset,
                                             register,
-                                            ..
-                                        } = a
+                                            register_pos,
+                                        } = a.kind
                                         {
-                                            let offset = u16::parse_maybe_neg(offset)
-                                                .map_err(AssembleError::ParseIntError)?;
+                                            let offset =
+                                                u16::parse_maybe_neg(offset).map_err(|e| {
+                                                    AssembleError {
+                                                        pos: a.pos,
+                                                        kind: AssembleErrorKind::ParseIntError(e),
+                                                    }
+                                                })?;
                                             if offset % 2 != 0 {
-                                                return Err(AssembleError::MisalignedOffset(
-                                                    offset,
-                                                ));
+                                                return Err(AssembleError {
+                                                    pos: a.pos,
+                                                    kind: AssembleErrorKind::MisalignedOffset(
+                                                        offset,
+                                                    ),
+                                                });
                                             }
 
                                             new_load_store(
                                                 op,
-                                                Reg::try_from(register)
-                                                    .map_err(|_| AssembleError::UnknownReg(name))?,
+                                                Reg::try_from(register).map_err(|_| {
+                                                    AssembleError {
+                                                        pos: register_pos,
+                                                        kind: AssembleErrorKind::UnknownReg(name),
+                                                    }
+                                                })?,
                                                 rt,
                                                 offset,
                                             )
                                         } else {
-                                            return Err(AssembleError::UnexpectedArgument(a));
+                                            return Err(AssembleError {
+                                                pos: a.pos,
+                                                kind: AssembleErrorKind::UnexpectedArgument(a.kind),
+                                            });
                                         }
                                     }
 
                                     Op::LW | Op::SW => {
-                                        assert_nargs!(arguments, 2);
-                                        let rt = expect_reg!(arguments);
-                                        let a = arguments.remove(0).kind;
+                                        assert_nargs!(arguments, 2, end_pos);
+                                        let rt = expect_reg!(arguments).0;
+                                        let a = arguments.remove(0);
                                         if let ArgumentKind::OffsetRegister {
                                             offset,
                                             register,
-                                            ..
-                                        } = a
+                                            register_pos,
+                                        } = a.kind
                                         {
-                                            let offset = u16::parse_maybe_neg(offset)
-                                                .map_err(AssembleError::ParseIntError)?;
+                                            let offset =
+                                                u16::parse_maybe_neg(offset).map_err(|e| {
+                                                    AssembleError {
+                                                        pos: a.pos,
+                                                        kind: AssembleErrorKind::ParseIntError(e),
+                                                    }
+                                                })?;
                                             if offset % 4 != 0 {
-                                                return Err(AssembleError::MisalignedOffset(
-                                                    offset,
-                                                ));
+                                                return Err(AssembleError {
+                                                    pos: a.pos,
+                                                    kind: AssembleErrorKind::MisalignedOffset(
+                                                        offset,
+                                                    ),
+                                                });
                                             }
 
                                             new_load_store(
                                                 op,
-                                                Reg::try_from(register)
-                                                    .map_err(|_| AssembleError::UnknownReg(name))?,
+                                                Reg::try_from(register).map_err(|_| {
+                                                    AssembleError {
+                                                        pos: register_pos,
+                                                        kind: AssembleErrorKind::UnknownReg(name),
+                                                    }
+                                                })?,
                                                 rt,
                                                 offset,
                                             )
                                         } else {
-                                            return Err(AssembleError::UnexpectedArgument(a));
+                                            return Err(AssembleError {
+                                                pos: a.pos,
+                                                kind: AssembleErrorKind::UnexpectedArgument(a.kind),
+                                            });
                                         }
                                     }
 
                                     Op::J | Op::JAL => {
-                                        assert_nargs!(arguments, 1);
+                                        assert_nargs!(arguments, 1, end_pos);
+                                        let (ident, pos) = expect_label!(arguments);
                                         label_references.push(LabelReference {
-                                            ident: expect_label!(arguments),
+                                            ident,
                                             location: program.len(),
+                                            pos,
                                             kind: ReferenceKind::Jump,
                                         });
                                         new_jump(op)
@@ -412,15 +533,22 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
 
                                     Op::SYSCALL => {
                                         if arguments.len() > 0 {
-                                            return Err(AssembleError::UnexpectedArgument(
-                                                arguments.remove(0).kind,
-                                            ));
+                                            let a = arguments.remove(0);
+                                            return Err(AssembleError {
+                                                pos: a.pos,
+                                                kind: AssembleErrorKind::UnexpectedArgument(a.kind),
+                                            });
                                         }
 
                                         SYSCALL
                                     }
 
-                                    Op::REG => return Err(AssembleError::UnknownInstruction(name)),
+                                    Op::REG => {
+                                        return Err(AssembleError {
+                                            pos: entry.pos,
+                                            kind: AssembleErrorKind::UnknownInstruction(name),
+                                        })
+                                    }
                                 };
 
                                 program.extend_from_slice(&inst.to_le_bytes());
@@ -440,64 +568,72 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                     | Funct::XOR
                                     | Funct::SLT
                                     | Funct::SLTU => {
-                                        assert_nargs!(arguments, 3);
+                                        assert_nargs!(arguments, 3, end_pos);
                                         rd = Some(expect_reg!(arguments));
-                                        rs = expect_reg!(arguments);
-                                        rt = expect_reg!(arguments);
+                                        rs = expect_reg!(arguments).0;
+                                        rt = expect_reg!(arguments).0;
                                     }
 
                                     Funct::MULT | Funct::MULTU | Funct::DIV | Funct::DIVU => {
-                                        assert_nargs!(arguments, 2);
-                                        rs = expect_reg!(arguments);
-                                        rt = expect_reg!(arguments);
+                                        assert_nargs!(arguments, 2, end_pos);
+                                        rs = expect_reg!(arguments).0;
+                                        rt = expect_reg!(arguments).0;
                                     }
 
                                     Funct::SLL | Funct::SRL | Funct::SRA => {
-                                        assert_nargs!(arguments, 3);
+                                        assert_nargs!(arguments, 3, end_pos);
                                         rd = Some(expect_reg!(arguments));
-                                        rt = expect_reg!(arguments);
-                                        let shamt_lit = expect_num_lit!(arguments);
+                                        rt = expect_reg!(arguments).0;
+                                        let (shamt_lit, lit_pos) = expect_num_lit!(arguments);
                                         match u8::parse_non_neg(shamt_lit.clone()) {
                                             Ok(s) => {
                                                 shamt = s;
                                                 if shamt > 16 {
-                                                    return Err(AssembleError::OverflowingShamt(
-                                                        shamt_lit,
-                                                    ));
+                                                    return Err(AssembleError {
+                                                        pos: lit_pos,
+                                                        kind: AssembleErrorKind::OverflowingShamt(
+                                                            shamt_lit,
+                                                        ),
+                                                    });
                                                 };
                                             }
                                             Err(e) => {
-                                                return match e {
-                                                    IntErrorKind::PosOverflow
-                                                    | IntErrorKind::NegOverflow => Err(
-                                                        AssembleError::OverflowingShamt(shamt_lit),
-                                                    ),
-                                                    _ => Err(AssembleError::ParseIntError(e)),
-                                                }
+                                                return Err(AssembleError {
+                                                    pos: lit_pos,
+                                                    kind: match e {
+                                                        IntErrorKind::PosOverflow
+                                                        | IntErrorKind::NegOverflow => {
+                                                            AssembleErrorKind::OverflowingShamt(
+                                                                shamt_lit,
+                                                            )
+                                                        }
+                                                        _ => AssembleErrorKind::ParseIntError(e),
+                                                    },
+                                                })
                                             }
                                         };
                                     }
 
                                     Funct::SLLV | Funct::SRLV | Funct::SRAV => {
-                                        assert_nargs!(arguments, 3);
+                                        assert_nargs!(arguments, 3, end_pos);
                                         rd = Some(expect_reg!(arguments));
-                                        rt = expect_reg!(arguments);
-                                        rs = expect_reg!(arguments);
+                                        rt = expect_reg!(arguments).0;
+                                        rs = expect_reg!(arguments).0;
                                     }
 
                                     Funct::JR | Funct::JALR => {
-                                        assert_nargs!(arguments, 1);
-                                        rs = expect_reg!(arguments);
+                                        assert_nargs!(arguments, 1, end_pos);
+                                        rs = expect_reg!(arguments).0;
                                     }
 
                                     Funct::MFHI | Funct::MFLO => {
-                                        assert_nargs!(arguments, 1);
+                                        assert_nargs!(arguments, 1, end_pos);
                                         rd = Some(expect_reg!(arguments));
                                     }
 
                                     Funct::MTHI | Funct::MTLO => {
-                                        assert_nargs!(arguments, 1);
-                                        rs = expect_reg!(arguments);
+                                        assert_nargs!(arguments, 1, end_pos);
+                                        rs = expect_reg!(arguments).0;
                                     }
                                 }
 
@@ -507,22 +643,33 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                 // is 0. It won't actually be used during runtime in this case, so
                                 // it could be set to anything, but we should make it zero to avoid
                                 // confusion.
-                                if Some(Reg::Zero) == rd {
-                                    return Err(AssembleError::InvalidDestination);
+                                if let Some((Reg::Zero, pos)) = rd {
+                                    return Err(AssembleError {
+                                        pos,
+                                        kind: AssembleErrorKind::InvalidDestination,
+                                    });
                                 }
                                 program.extend_from_slice(
-                                    &new_reg(rs, rt, rd.unwrap_or(Reg::Zero), shamt, funct)
-                                        .to_le_bytes(),
+                                    &new_reg(
+                                        rs,
+                                        rt,
+                                        rd.map(|(rd, _)| rd).unwrap_or(Reg::Zero),
+                                        shamt,
+                                        funct,
+                                    )
+                                    .to_le_bytes(),
                                 );
                             } else {
                                 // TODO: make pseudo-instructions configurable?
                                 match name {
                                     "la" => {
-                                        assert_nargs!(arguments, 2);
-                                        let rt = expect_reg!(arguments);
+                                        assert_nargs!(arguments, 2, end_pos);
+                                        let rt = expect_reg!(arguments).0;
+                                        let (ident, pos) = expect_label!(arguments);
                                         label_references.push(LabelReference {
-                                            ident: expect_label!(arguments),
+                                            ident,
                                             location: program.len(),
+                                            pos,
                                             kind: ReferenceKind::RawImm,
                                         });
                                         program.extend_from_slice(
@@ -531,19 +678,30 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                         );
                                     }
                                     "li" => {
-                                        assert_nargs!(arguments, 2);
+                                        assert_nargs!(arguments, 2, end_pos);
+                                        let rt = expect_reg!(arguments).0;
+                                        let (lit, pos) = expect_num_lit!(arguments);
                                         program.extend_from_slice(
                                             &new_arith_log_i(
                                                 Op::ADDI,
                                                 Reg::Zero,
-                                                expect_reg!(arguments),
-                                                u16::parse_maybe_neg(expect_num_lit!(arguments))
-                                                    .map_err(AssembleError::ParseIntError)?,
+                                                rt,
+                                                u16::parse_maybe_neg(lit).map_err(|e| {
+                                                    AssembleError {
+                                                        pos,
+                                                        kind: AssembleErrorKind::ParseIntError(e),
+                                                    }
+                                                })?,
                                             )
                                             .to_le_bytes(),
                                         );
                                     }
-                                    _ => return Err(AssembleError::UnknownInstruction(name)),
+                                    _ => {
+                                        return Err(AssembleError {
+                                            pos: entry.pos,
+                                            kind: AssembleErrorKind::UnknownInstruction(name),
+                                        })
+                                    }
                                 }
                             }
                         }
@@ -556,37 +714,48 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
     for reference in label_references {
         let definition = label_definitions
             .get(reference.ident)
-            .ok_or_else(|| AssembleError::UndefinedLabel(reference.ident))?;
+            .ok_or_else(|| AssembleError {
+                pos: reference.pos,
+                kind: AssembleErrorKind::UndefinedLabel(reference.ident),
+            })?;
         let imm: u32 = match reference.kind {
             ReferenceKind::Jump => {
                 let full = (*definition as i32 - (reference.location + 4) as i32) >> 2;
                 full.checked_shl(6)
-                    .ok_or(AssembleError::OverflowingLabelReference(full as u32))?
-                    as u32
-                    >> 6
+                    .ok_or(AssembleErrorKind::OverflowingLabelReference(full as u32))
+                    .map(|s| s as u32 >> 6)
             }
             ReferenceKind::Imm => {
                 let full = (*definition as i32 - (reference.location + 4) as i32) >> 2;
-                let short: i16 = full
-                    .try_into()
-                    .map_err(|_| AssembleError::OverflowingLabelReference(full as u32))?;
-                short as u16 as u32
+                i16::try_from(full)
+                    .map_err(|_| AssembleErrorKind::OverflowingLabelReference(full as u32))
+                    .map(|s| s as u16 as u32)
             }
             ReferenceKind::RawImm => {
                 let full = *definition as i32;
-                let short: i16 = full
-                    .try_into()
-                    .map_err(|_| AssembleError::OverflowingLabelReference(full as u32))?;
-                short as u16 as u32
+                i16::try_from(full)
+                    .map_err(|_| AssembleErrorKind::OverflowingLabelReference(full as u32))
+                    .map(|s| s as u16 as u32)
             }
-        };
+        }
+        .map_err(|kind| AssembleError {
+            pos: reference.pos,
+            kind,
+        })?;
         unsafe { program[reference.location..].align_to_mut::<u32>() }.1[0] |= imm.to_le();
     }
 
     if Some(true) == initial_section_data {
-        let imm = initial_text_section.ok_or(AssembleError::NoText)? - 4 >> 2;
+        let (location, pos) = initial_text_section.ok_or(AssembleError {
+            pos: ast.eof_pos,
+            kind: AssembleErrorKind::NoText,
+        })?;
+        let imm = location - 4 >> 2;
         if imm > (1 << 26) - 1 {
-            return Err(AssembleError::OverflowingLabelReference(imm));
+            return Err(AssembleError {
+                pos,
+                kind: AssembleErrorKind::OverflowingLabelReference(imm),
+            });
         }
         unsafe { program.align_to_mut::<u32>() }.1[0] |= imm;
     }
@@ -809,25 +978,52 @@ mod tests {
 
     #[test]
     fn invalid_dest() {
-        asm_err_text_test!("addi $zero, $zero, 0", AssembleError::InvalidDestination);
-        asm_err_text_test!("lhi $zero, 94", AssembleError::InvalidDestination);
-        asm_err_text_test!("add $zero, $zero, $zero", AssembleError::InvalidDestination);
+        asm_err_text_test!(
+            "addi $zero, $zero, 0",
+            AssembleError {
+                pos: 15,
+                kind: AssembleErrorKind::InvalidDestination
+            }
+        );
+        asm_err_text_test!(
+            "lhi $zero, 94",
+            AssembleError {
+                pos: 14,
+                kind: AssembleErrorKind::InvalidDestination
+            }
+        );
+        asm_err_text_test!(
+            "add $zero, $zero, $zero",
+            AssembleError {
+                pos: 14,
+                kind: AssembleErrorKind::InvalidDestination
+            }
+        );
     }
 
     #[test]
     fn unknown_instruction() {
         asm_err_text_test!(
             "reg $t0, $t0, $t0",
-            AssembleError::UnknownInstruction("reg")
+            AssembleError {
+                pos: 10,
+                kind: AssembleErrorKind::UnknownInstruction("reg")
+            }
         );
         asm_err_text_test!(
             "bogus $t0, $t0, $t0",
-            AssembleError::UnknownInstruction("bogus")
+            AssembleError {
+                pos: 10,
+                kind: AssembleErrorKind::UnknownInstruction("bogus")
+            }
         );
         // identifiers are case sensitive
         asm_err_text_test!(
             "ADD $t0, $t0, $t0",
-            AssembleError::UnknownInstruction("ADD")
+            AssembleError {
+                pos: 10,
+                kind: AssembleErrorKind::UnknownInstruction("ADD")
+            }
         );
     }
 
@@ -835,68 +1031,111 @@ mod tests {
     fn redeclared_label() {
         asm_err_text_test!(
             r#"
-            EXIT:
-            EXIT:
+EXIT:
+EXIT:
             "#,
-            AssembleError::RedeclaredLabel("EXIT")
+            AssembleError {
+                pos: 17,
+                kind: AssembleErrorKind::RedeclaredLabel("EXIT")
+            }
         );
         asm_err_text_test!(
             r#"
-            EXIT:
-                .text
-            EXIT:
+EXIT:
+    .text
+EXIT:
             "#,
-            AssembleError::RedeclaredLabel("EXIT")
+            AssembleError {
+                pos: 27,
+                kind: AssembleErrorKind::RedeclaredLabel("EXIT")
+            }
         );
     }
 
     #[test]
     fn misaligned_offset() {
-        asm_err_text_test!("lh $t0, 1($t1)", AssembleError::MisalignedOffset(1));
-        asm_err_text_test!("lw $t0, 2($t1)", AssembleError::MisalignedOffset(2));
+        asm_err_text_test!(
+            "lh $t0, 1($t1)",
+            AssembleError {
+                pos: 18,
+                kind: AssembleErrorKind::MisalignedOffset(1)
+            }
+        );
+        asm_err_text_test!(
+            "lw $t0, 2($t1)",
+            AssembleError {
+                pos: 18,
+                kind: AssembleErrorKind::MisalignedOffset(2)
+            }
+        );
     }
 
     #[test]
     fn unexpected_arg() {
         asm_err_text_test!(
             "addi $t0, $zero, 4, 9",
-            AssembleError::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(NumLiteral {
-                negative: false,
-                radix: 10,
-                body: "9"
-            })))
+            AssembleError {
+                pos: 30,
+                kind: AssembleErrorKind::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(
+                    NumLiteral {
+                        negative: false,
+                        radix: 10,
+                        body: "9"
+                    }
+                )))
+            }
         );
         asm_err_text_test!(
             "sb $t0, 0",
-            AssembleError::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(NumLiteral {
-                negative: false,
-                radix: 10,
-                body: "0"
-            })))
+            AssembleError {
+                pos: 18,
+                kind: AssembleErrorKind::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(
+                    NumLiteral {
+                        negative: false,
+                        radix: 10,
+                        body: "0"
+                    }
+                )))
+            }
         );
         asm_err_text_test!(
             "sh $t0, 0",
-            AssembleError::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(NumLiteral {
-                negative: false,
-                radix: 10,
-                body: "0"
-            })))
+            AssembleError {
+                pos: 18,
+                kind: AssembleErrorKind::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(
+                    NumLiteral {
+                        negative: false,
+                        radix: 10,
+                        body: "0"
+                    }
+                )))
+            }
         );
         asm_err_text_test!(
             "sw $t0, 0",
-            AssembleError::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(NumLiteral {
-                negative: false,
-                radix: 10,
-                body: "0"
-            })))
+            AssembleError {
+                pos: 18,
+                kind: AssembleErrorKind::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(
+                    NumLiteral {
+                        negative: false,
+                        radix: 10,
+                        body: "0"
+                    }
+                )))
+            }
         );
         asm_err_text_test!(
             "syscall 0",
-            AssembleError::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(NumLiteral {
-                negative: false,
-                radix: 10,
-                body: "0"
-            })))
+            AssembleError {
+                pos: 18,
+                kind: AssembleErrorKind::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(
+                    NumLiteral {
+                        negative: false,
+                        radix: 10,
+                        body: "0"
+                    }
+                )))
+            }
         );
     }
 
@@ -904,27 +1143,36 @@ mod tests {
     fn bad_shamt() {
         asm_err_text_test!(
             "sll $t0, $t0, 17",
-            AssembleError::OverflowingShamt(NumLiteral {
-                negative: false,
-                radix: 10,
-                body: "17"
-            })
+            AssembleError {
+                pos: 24,
+                kind: AssembleErrorKind::OverflowingShamt(NumLiteral {
+                    negative: false,
+                    radix: 10,
+                    body: "17"
+                })
+            }
         );
         asm_err_text_test!(
             "sll $t0, $t0, -1",
-            AssembleError::OverflowingShamt(NumLiteral {
-                negative: true,
-                radix: 10,
-                body: "1"
-            })
+            AssembleError {
+                pos: 24,
+                kind: AssembleErrorKind::OverflowingShamt(NumLiteral {
+                    negative: true,
+                    radix: 10,
+                    body: "1"
+                })
+            }
         );
         asm_err_text_test!(
             "sll $t0, $t0, 50000",
-            AssembleError::OverflowingShamt(NumLiteral {
-                negative: false,
-                radix: 10,
-                body: "50000"
-            })
+            AssembleError {
+                pos: 24,
+                kind: AssembleErrorKind::OverflowingShamt(NumLiteral {
+                    negative: false,
+                    radix: 10,
+                    body: "50000"
+                })
+            }
         );
     }
 
@@ -957,8 +1205,8 @@ mod tests {
         );
         asm_text_test!(
             r#"
-            j EXIT
-            EXIT: syscall
+j EXIT
+EXIT: syscall
             "#,
             new_jump(Op::J) | 0,
             SYSCALL
