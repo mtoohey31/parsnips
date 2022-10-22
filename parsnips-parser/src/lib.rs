@@ -3,7 +3,7 @@
 mod lex;
 use core::num::IntErrorKind;
 
-use lex::{lex, LexError, TokenKind};
+use lex::{lex, LexError, Token, TokenKind};
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -201,9 +201,14 @@ pub enum DataValue<'a> {
     },
 }
 
-// TODO: include location of error
 #[derive(Debug, PartialEq, Eq)]
-pub enum ParseError<'a> {
+pub struct ParseError<'a> {
+    pos: usize,
+    kind: ParseErrorKind<'a>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ParseErrorKind<'a> {
     LexError(LexError),
     ParseIntError(IntErrorKind),
     UnterminatedDirective,
@@ -215,64 +220,93 @@ pub enum ParseError<'a> {
 }
 
 macro_rules! expect {
-    ($ti:expr, $t:expr) => {{
+    ($ti:expr, $t:expr, $pos:expr) => {{
         match $ti.next() {
             Some(t) => {
                 if $t == t.kind {
                     Ok(())
                 } else {
-                    Err(ParseError::UnexpectedToken(t.kind))
+                    Err(ParseError {
+                        pos: t.pos,
+                        kind: ParseErrorKind::UnexpectedToken(t.kind),
+                    })
                 }
             }
-            None => Err(ParseError::UnexpectedEOF),
+            None => Err(ParseError {
+                pos: $pos,
+                kind: ParseErrorKind::UnexpectedEOF,
+            }),
         }
     }};
 }
 
 macro_rules! expect_ident {
-    ($ti:expr) => {{
+    ($ti:expr, $pos:expr) => {{
         match $ti.next() {
             Some(t) => {
                 if let TokenKind::Ident(s) = t.kind {
-                    Ok(s)
+                    Ok((t.pos, s))
                 } else {
-                    Err(ParseError::UnexpectedToken(t.kind))
+                    Err(ParseError {
+                        pos: t.pos,
+                        kind: ParseErrorKind::UnexpectedToken(t.kind),
+                    })
                 }
             }
-            None => Err(ParseError::UnexpectedEOF),
+            None => Err(ParseError {
+                pos: $pos,
+                kind: ParseErrorKind::UnexpectedEOF,
+            }),
         }
     }};
 }
 
 macro_rules! expect_literal {
-    ($ti:expr) => {{
+    ($ti:expr, $pos:expr) => {{
         match $ti.next() {
             Some(t) => {
                 if let TokenKind::Literal(l) = t.kind {
                     Ok(l)
                 } else {
-                    Err(ParseError::UnexpectedToken(t.kind))
+                    Err(ParseError {
+                        pos: t.pos,
+                        kind: ParseErrorKind::UnexpectedToken(t.kind),
+                    })
                 }
             }
-            None => Err(ParseError::UnexpectedEOF),
+            None => Err(ParseError {
+                pos: $pos,
+                kind: ParseErrorKind::UnexpectedEOF,
+            }),
         }
     }};
 }
 
 macro_rules! skip_whitespace {
-    ($ti:expr) => {{
+    ($ti:expr, $pos:expr) => {{
+        let mut pos = $pos;
         while let Some(&TokenKind::Whitespace) = $ti.peek().map(|t| &t.kind) {
-            $ti.next();
+            Token { pos, .. } = $ti.next().unwrap();
         }
+        pos
     }};
 }
 
 macro_rules! skip_at_least_one_whitespace {
-    ($ti:expr) => {{
+    ($ti:expr, $pos:expr) => {{
         match $ti.peek().map(|t| &t.kind) {
-            Some(TokenKind::Whitespace) => Ok(skip_whitespace!($ti)),
-            None => Err(ParseError::UnexpectedEOF),
-            Some(_) => Err(ParseError::UnexpectedToken($ti.next().unwrap().kind)),
+            Some(TokenKind::Whitespace) => Ok(skip_whitespace!($ti, $pos)),
+            None => Err(ParseError {
+                pos: $pos,
+                kind: ParseErrorKind::UnexpectedEOF,
+            }),
+            Some(_) => {
+                let t = $ti.next().unwrap();
+                Err(ParseError {
+                    pos: t.pos,
+                    kind: ParseErrorKind::UnexpectedToken(t.kind),
+                })
+            }
         }
     }};
 }
@@ -287,7 +321,10 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
     // panics in match statements for when comments are encountered all over the
     // place.
     let mut ti = lex(input)
-        .map_err(ParseError::LexError)?
+        .map_err(|e| ParseError {
+            pos: e.pos,
+            kind: ParseErrorKind::LexError(e),
+        })?
         .into_iter()
         .filter(|t| match t.kind {
             TokenKind::Comment(_) => false,
@@ -298,18 +335,30 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
     while let Some(t) = ti.next() {
         match t.kind {
             TokenKind::Dot => {
-                let tn = ti.next().ok_or(ParseError::UnterminatedDirective)?;
+                let tn = ti.next().ok_or(ParseError {
+                    pos: t.pos + 1,
+                    kind: ParseErrorKind::UnterminatedDirective,
+                })?;
                 if let Some(s) = cs.take() {
                     a.sections.push(s);
                 }
                 match tn.kind {
                     TokenKind::Ident("data") => cs = Some(Section::Data(Vec::new())),
                     TokenKind::Ident("text") => cs = Some(Section::Text(Vec::new())),
-                    TokenKind::Ident(d) => return Err(ParseError::UnknownDirective(d)),
-                    _ => return Err(ParseError::UnexpectedToken(tn.kind)),
+                    TokenKind::Ident(d) => {
+                        return Err(ParseError {
+                            pos: tn.pos,
+                            kind: ParseErrorKind::UnknownDirective(d),
+                        })
+                    }
+                    _ => {
+                        return Err(ParseError {
+                            pos: tn.pos,
+                            kind: ParseErrorKind::UnexpectedToken(tn.kind),
+                        })
+                    }
                 }
-                skip_whitespace!(ti);
-                expect!(ti, TokenKind::Newline)?;
+                expect!(ti, TokenKind::Newline, skip_whitespace!(ti, tn.pos))?;
             }
             TokenKind::Comma => todo!(),
             TokenKind::Colon => todo!(),
@@ -322,18 +371,26 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                 match cs.as_mut() {
                     Some(Section::Data(data)) => {
                         // It can only be a label
-                        expect!(ti, TokenKind::Colon)?;
-                        skip_whitespace!(ti);
-                        expect!(ti, TokenKind::Dot)?;
-                        let kind_str = expect_ident!(ti)?;
-                        let kind: DataKind = DataKind::try_from(kind_str)
-                            .or_else(|_| Err(ParseError::UnknownDataKind(kind_str)))?;
-                        skip_at_least_one_whitespace!(ti)?;
+                        expect!(ti, TokenKind::Colon, t.pos)?;
+                        let pos = skip_whitespace!(ti, t.pos + 1);
+                        expect!(ti, TokenKind::Dot, pos)?;
+                        let (pos, kind_str) = expect_ident!(ti, pos + 1)?;
+                        let kind: DataKind = DataKind::try_from(kind_str).or_else(|_| {
+                            Err(ParseError {
+                                pos,
+                                kind: ParseErrorKind::UnknownDataKind(kind_str),
+                            })
+                        })?;
+                        let pos = skip_at_least_one_whitespace!(ti, pos)?;
+                        let t = ti.next().ok_or(ParseError {
+                            pos,
+                            kind: ParseErrorKind::UnexpectedEOF,
+                        })?;
                         data.push(Data {
                             label: i,
                             value: DataDeclaration {
                                 kind,
-                                value: match ti.next().ok_or(ParseError::UnexpectedEOF)?.kind {
+                                value: match t.kind {
                                     TokenKind::Dot => todo!(),
                                     TokenKind::Comma => todo!(),
                                     TokenKind::Colon => todo!(),
@@ -344,14 +401,17 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                     TokenKind::Newline => todo!(),
                                     TokenKind::Ident(_) => todo!(),
                                     TokenKind::Literal(Literal::Num(value)) => {
-                                        skip_whitespace!(ti);
-                                        match ti.next().map(|t| t.kind) {
+                                        skip_whitespace!(ti, t.pos);
+                                        let t = match ti.next() {
+                                            Some(t) => t,
                                             None => todo!(),
-                                            Some(TokenKind::Dot) => todo!(),
-                                            Some(TokenKind::Comma) => todo!(),
-                                            Some(TokenKind::Colon) => {
-                                                skip_whitespace!(ti);
-                                                match expect_literal!(ti)? {
+                                        };
+                                        match t.kind {
+                                            TokenKind::Dot => todo!(),
+                                            TokenKind::Comma => todo!(),
+                                            TokenKind::Colon => {
+                                                let pos = skip_whitespace!(ti, t.pos);
+                                                match expect_literal!(ti, pos)? {
                                                     Literal::Num(size) => {
                                                         // TODO: translate and populate this
                                                         DataValue::Array { value, size }
@@ -360,15 +420,15 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                                     Literal::Str(_) => todo!(),
                                                 }
                                             }
-                                            Some(TokenKind::OpenParen) => todo!(),
-                                            Some(TokenKind::CloseParen) => todo!(),
-                                            Some(TokenKind::Dollar) => todo!(),
-                                            Some(TokenKind::Whitespace) => todo!(),
-                                            Some(TokenKind::Newline) => DataValue::Int(value),
-                                            Some(TokenKind::Ident(_)) => todo!(),
-                                            Some(TokenKind::Literal(_)) => todo!(),
+                                            TokenKind::OpenParen => todo!(),
+                                            TokenKind::CloseParen => todo!(),
+                                            TokenKind::Dollar => todo!(),
+                                            TokenKind::Whitespace => todo!(),
+                                            TokenKind::Newline => DataValue::Int(value),
+                                            TokenKind::Ident(_) => todo!(),
+                                            TokenKind::Literal(_) => todo!(),
 
-                                            Some(TokenKind::Comment(_)) => panic!(),
+                                            TokenKind::Comment(_) => panic!(),
                                         }
                                     }
                                     TokenKind::Literal(Literal::Char(_)) => todo!(),
@@ -393,71 +453,98 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                 arguments: Vec::new(),
                             };
 
-                            skip_whitespace!(ti);
-                            match ti.next().map(|t| t.kind) {
-                                Some(TokenKind::Newline) | None => {
+                            let pos = skip_whitespace!(ti, t.pos);
+                            let t = match ti.next() {
+                                Some(t) => t,
+                                None => {
                                     entries.push(Entry::Instruction(inst));
                                     continue;
                                 }
-                                Some(TokenKind::Dollar) => {
-                                    inst.arguments.push(Argument::Register(expect_ident!(ti)?))
+                            };
+                            match t.kind {
+                                TokenKind::Newline => {
+                                    entries.push(Entry::Instruction(inst));
+                                    continue;
                                 }
-                                Some(TokenKind::Ident(i)) => {
+                                TokenKind::Dollar => inst
+                                    .arguments
+                                    .push(Argument::Register(expect_ident!(ti, t.pos)?.1)),
+                                TokenKind::Ident(i) => {
                                     inst.arguments.push(Argument::Label(i));
                                 }
-                                Some(TokenKind::Literal(l)) => {
-                                    inst.arguments.push(Argument::Literal(l))
-                                }
-                                Some(TokenKind::Dot) => todo!(),
-                                Some(TokenKind::Comma) => todo!(),
-                                Some(TokenKind::Colon) => todo!(),
-                                Some(TokenKind::OpenParen) => todo!(),
-                                Some(TokenKind::CloseParen) => todo!(),
-                                Some(TokenKind::Whitespace) => todo!(),
+                                TokenKind::Literal(l) => inst.arguments.push(Argument::Literal(l)),
+                                TokenKind::Dot => todo!(),
+                                TokenKind::Comma => todo!(),
+                                TokenKind::Colon => todo!(),
+                                TokenKind::OpenParen => todo!(),
+                                TokenKind::CloseParen => todo!(),
+                                TokenKind::Whitespace => todo!(),
 
-                                Some(TokenKind::Comment(_)) => panic!(),
+                                TokenKind::Comment(_) => panic!(),
                             }
 
                             loop {
-                                skip_whitespace!(ti);
-                                match ti.next().map(|t| t.kind) {
-                                    Some(TokenKind::Comma) => {} // Get next arg
-                                    Some(TokenKind::Newline) | None => break,
-                                    Some(u) => return Err(ParseError::UnexpectedToken(u)),
-                                }
-                                skip_whitespace!(ti);
-                                match ti.next().map(|t| t.kind) {
-                                    Some(TokenKind::Dollar) => {
-                                        inst.arguments.push(Argument::Register(expect_ident!(ti)?));
+                                let pos = skip_whitespace!(ti, pos);
+                                let t = match ti.next() {
+                                    Some(t) => t,
+                                    None => {
+                                        break;
                                     }
-                                    Some(TokenKind::Ident(i)) => {
+                                };
+                                match t.kind {
+                                    TokenKind::Comma => {} // Get next arg
+                                    TokenKind::Newline => break,
+                                    u => {
+                                        return Err(ParseError {
+                                            pos,
+                                            kind: ParseErrorKind::UnexpectedToken(u),
+                                        })
+                                    }
+                                };
+
+                                let pos = skip_whitespace!(ti, t.pos);
+                                let t = match ti.next() {
+                                    Some(t) => t,
+                                    None => {
+                                        return Err(ParseError {
+                                            pos,
+                                            kind: ParseErrorKind::UnexpectedEOF,
+                                        });
+                                    }
+                                };
+                                match t.kind {
+                                    TokenKind::Dollar => {
+                                        inst.arguments
+                                            .push(Argument::Register(expect_ident!(ti, t.pos)?.1));
+                                    }
+                                    TokenKind::Ident(i) => {
                                         inst.arguments.push(Argument::Label(i));
                                     }
-                                    Some(TokenKind::Literal(Literal::Num(nl))) => {
+                                    TokenKind::Literal(Literal::Num(nl)) => {
                                         if Some(&TokenKind::OpenParen) == ti.peek().map(|t| &t.kind)
                                         {
-                                            ti.next().unwrap();
-                                            expect!(ti, TokenKind::Dollar)?;
+                                            let Token { pos, .. } = ti.next().unwrap();
+                                            expect!(ti, TokenKind::Dollar, pos)?;
+                                            let (pos, register) = expect_ident!(ti, pos + 1)?;
                                             inst.arguments.push(Argument::OffsetRegister {
                                                 offset: nl,
-                                                register: expect_ident!(ti)?,
+                                                register,
                                             });
-                                            expect!(ti, TokenKind::CloseParen)?;
+                                            expect!(ti, TokenKind::CloseParen, pos)?;
                                         } else {
                                             inst.arguments.push(Argument::Literal(Literal::Num(nl)))
                                         }
                                     }
-                                    Some(TokenKind::Dot) => todo!(),
-                                    Some(TokenKind::Comma) => todo!(),
-                                    Some(TokenKind::Colon) => todo!(),
-                                    Some(TokenKind::OpenParen) => todo!(),
-                                    Some(TokenKind::CloseParen) => todo!(),
-                                    Some(TokenKind::Whitespace) => todo!(),
-                                    Some(TokenKind::Newline) => todo!(),
-                                    Some(TokenKind::Literal(_)) => todo!(),
-                                    None => return Err(ParseError::UnexpectedEOF),
+                                    TokenKind::Dot => todo!(),
+                                    TokenKind::Comma => todo!(),
+                                    TokenKind::Colon => todo!(),
+                                    TokenKind::OpenParen => todo!(),
+                                    TokenKind::CloseParen => todo!(),
+                                    TokenKind::Whitespace => todo!(),
+                                    TokenKind::Newline => todo!(),
+                                    TokenKind::Literal(_) => todo!(),
 
-                                    Some(TokenKind::Comment(_)) => panic!(),
+                                    TokenKind::Comment(_) => panic!(),
                                 }
                             }
 
