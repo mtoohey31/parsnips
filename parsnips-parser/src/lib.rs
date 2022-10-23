@@ -96,14 +96,14 @@ pub struct NumLiteral<'a> {
     pub body: &'a str,
 }
 
-pub trait ParseNonNeg {
-    fn parse_non_neg(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
+pub trait ParseUnsigned {
+    fn parse_unsigned(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
     where
         Self: Sized;
 }
 
-impl ParseNonNeg for u8 {
-    fn parse_non_neg(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
+impl ParseUnsigned for u8 {
+    fn parse_unsigned(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
     where
         Self: Sized,
     {
@@ -119,8 +119,8 @@ impl ParseNonNeg for u8 {
     }
 }
 
-impl ParseNonNeg for usize {
-    fn parse_non_neg(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
+impl ParseUnsigned for usize {
+    fn parse_unsigned(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
     where
         Self: Sized,
     {
@@ -136,14 +136,14 @@ impl ParseNonNeg for usize {
     }
 }
 
-pub trait ParseMaybeNeg {
-    fn parse_maybe_neg(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
+pub trait ParseMaybeSigned {
+    fn parse_maybe_signed(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
     where
         Self: Sized;
 }
 
-impl ParseMaybeNeg for u8 {
-    fn parse_maybe_neg(num_lit: NumLiteral) -> Result<Self, IntErrorKind> {
+impl ParseMaybeSigned for u8 {
+    fn parse_maybe_signed(num_lit: NumLiteral) -> Result<Self, IntErrorKind> {
         Self::from_str_radix(num_lit.body, num_lit.radix)
             .map_err(|err| match err.kind() {
                 IntErrorKind::PosOverflow if num_lit.negative => IntErrorKind::NegOverflow,
@@ -161,8 +161,8 @@ impl ParseMaybeNeg for u8 {
     }
 }
 
-impl ParseMaybeNeg for u16 {
-    fn parse_maybe_neg(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
+impl ParseMaybeSigned for u16 {
+    fn parse_maybe_signed(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
     where
         Self: Sized,
     {
@@ -183,8 +183,8 @@ impl ParseMaybeNeg for u16 {
     }
 }
 
-impl ParseMaybeNeg for u32 {
-    fn parse_maybe_neg(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
+impl ParseMaybeSigned for u32 {
+    fn parse_maybe_signed(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
     where
         Self: Sized,
     {
@@ -201,6 +201,26 @@ impl ParseMaybeNeg for u32 {
                 } else {
                     Ok(raw)
                 }
+            })
+    }
+}
+
+pub trait ParseSigned {
+    fn parse_signed(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
+    where
+        Self: Sized;
+}
+
+impl ParseSigned for u16 {
+    fn parse_signed(num_lit: NumLiteral) -> Result<Self, IntErrorKind>
+    where
+        Self: Sized,
+    {
+        i16::from_str_radix(num_lit.body, num_lit.radix)
+            .map(|i| i as u16)
+            .map_err(|err| match err.kind() {
+                IntErrorKind::PosOverflow if num_lit.negative => IntErrorKind::NegOverflow,
+                _ => err.kind().clone(),
             })
     }
 }
@@ -640,7 +660,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
 mod tests {
     use super::*;
     use crate::lex::LexErrorKind;
-    use alloc::{borrow::ToOwned, vec};
+    use alloc::{borrow::ToOwned, format, vec};
     use pretty_assertions::assert_eq;
 
     macro_rules! parse_test {
@@ -1251,10 +1271,10 @@ asdf 0"#,
         }
     }
 
-    macro_rules! parse_non_neg_tests {
+    macro_rules! parse_unsigned_tests {
         ($t:ident) => {
             assert_eq!(
-                $t::parse_non_neg(NumLiteral {
+                $t::parse_unsigned(NumLiteral {
                     negative: false,
                     radix: 10,
                     body: "9"
@@ -1263,7 +1283,7 @@ asdf 0"#,
                 9
             );
             assert_eq!(
-                $t::parse_non_neg(NumLiteral {
+                $t::parse_unsigned(NumLiteral {
                     negative: true,
                     radix: 10,
                     body: "9"
@@ -1272,7 +1292,7 @@ asdf 0"#,
                 IntErrorKind::NegOverflow
             );
             assert_eq!(
-                $t::parse_non_neg(NumLiteral {
+                $t::parse_unsigned(NumLiteral {
                     negative: false,
                     radix: 2,
                     body: "010010110"
@@ -1281,7 +1301,7 @@ asdf 0"#,
                 150
             );
             assert_eq!(
-                $t::parse_non_neg(NumLiteral {
+                $t::parse_unsigned(NumLiteral {
                     negative: false,
                     radix: 36,
                     body: "10000000000000000000000000000000000000000000000000000"
@@ -1293,33 +1313,33 @@ asdf 0"#,
     }
 
     #[test]
-    fn parse_non_neg() {
-        parse_non_neg_tests!(u8);
-        parse_non_neg_tests!(usize);
+    fn parse_unsigned() {
+        parse_unsigned_tests!(u8);
+        parse_unsigned_tests!(usize);
     }
 
-    macro_rules! parse_maybe_neg_tests {
+    macro_rules! parse_maybe_signed_tests {
         ($t:ident, $ts:ident) => {
             assert_eq!(
-                $t::parse_maybe_neg(NumLiteral {
+                $t::parse_maybe_signed(NumLiteral {
                     negative: false,
                     radix: 10,
-                    body: "9"
+                    body: &format!("{}", $t::MAX),
                 })
                 .unwrap(),
-                9
+                $t::MAX
             );
             assert_eq!(
-                $t::parse_maybe_neg(NumLiteral {
+                $t::parse_maybe_signed(NumLiteral {
                     negative: true,
                     radix: 10,
-                    body: "9"
+                    body: &format!("{}", ($ts::MIN + 1) * -1),
                 })
                 .unwrap(),
-                -9 as $ts as $t
+                ($ts::MIN + 1) as $t
             );
             assert_eq!(
-                $t::parse_maybe_neg(NumLiteral {
+                $t::parse_maybe_signed(NumLiteral {
                     negative: false,
                     radix: 2,
                     body: "010010110"
@@ -1328,7 +1348,7 @@ asdf 0"#,
                 150
             );
             assert_eq!(
-                $t::parse_maybe_neg(NumLiteral {
+                $t::parse_maybe_signed(NumLiteral {
                     negative: false,
                     radix: 36,
                     body: "10000000000000000000000000000000000000000000000000000"
@@ -1337,7 +1357,7 @@ asdf 0"#,
                 IntErrorKind::PosOverflow
             );
             assert_eq!(
-                $t::parse_maybe_neg(NumLiteral {
+                $t::parse_maybe_signed(NumLiteral {
                     negative: true,
                     radix: 36,
                     body: "10000000000000000000000000000000000000000000000000000"
@@ -1349,10 +1369,59 @@ asdf 0"#,
     }
 
     #[test]
-    fn parse_maybe_neg() {
-        parse_maybe_neg_tests!(u8, i8);
-        parse_maybe_neg_tests!(u16, i16);
-        parse_maybe_neg_tests!(u32, i32);
+    fn parse_maybe_signed() {
+        parse_maybe_signed_tests!(u8, i8);
+        parse_maybe_signed_tests!(u16, i16);
+        parse_maybe_signed_tests!(u32, i32);
+    }
+
+    #[test]
+    fn parse_signed() {
+        assert_eq!(
+            u16::parse_signed(NumLiteral {
+                negative: false,
+                radix: 10,
+                body: "9"
+            })
+            .unwrap(),
+            9
+        );
+        assert_eq!(
+            u16::parse_signed(NumLiteral {
+                negative: false,
+                radix: 2,
+                body: "010010110"
+            })
+            .unwrap(),
+            150
+        );
+        assert_eq!(
+            u16::parse_signed(NumLiteral {
+                negative: false,
+                radix: 10,
+                body: &format!("{}", i16::MAX as i32 + 1),
+            })
+            .unwrap_err(),
+            IntErrorKind::PosOverflow,
+        );
+        assert_eq!(
+            u16::parse_signed(NumLiteral {
+                negative: false,
+                radix: 36,
+                body: "10000000000000000000000000000000000000000000000000000"
+            })
+            .unwrap_err(),
+            IntErrorKind::PosOverflow
+        );
+        assert_eq!(
+            u16::parse_signed(NumLiteral {
+                negative: true,
+                radix: 36,
+                body: "10000000000000000000000000000000000000000000000000000"
+            })
+            .unwrap_err(),
+            IntErrorKind::NegOverflow
+        );
     }
 
     #[test]

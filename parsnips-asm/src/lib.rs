@@ -3,7 +3,7 @@
 use parsnips_inst::{Funct, Inst, Op};
 use parsnips_parser::{
     ArgumentKind, Ast, DataDeclaration, DataKind, DataValue, EntryKind, Instruction, Literal,
-    NumLiteral, ParseMaybeNeg, ParseNonNeg, SectionKind,
+    NumLiteral, ParseMaybeSigned, ParseSigned, ParseUnsigned, SectionKind,
 };
 
 extern crate alloc;
@@ -215,7 +215,7 @@ macro_rules! push_int {
         let pad_len = pad_len(len);
         $prog.reserve(len + pad_len);
         $prog.extend_from_slice(
-            &$value_t::parse_maybe_neg($value)
+            &$value_t::parse_maybe_signed($value)
                 .map_err(|e| AssembleError {
                     pos: $value_pos,
                     kind: AssembleErrorKind::ParseIntError(e),
@@ -228,11 +228,11 @@ macro_rules! push_int {
 
 macro_rules! push_array {
     ($prog:expr, $value_t:ident, $value_pos:expr, $value:expr, $size_pos:expr, $size:expr) => {{
-        let value = $value_t::parse_maybe_neg($value).map_err(|e| AssembleError {
+        let value = $value_t::parse_maybe_signed($value).map_err(|e| AssembleError {
             pos: $value_pos,
             kind: AssembleErrorKind::ParseIntError(e),
         })?;
-        let size = usize::parse_non_neg($size).map_err(|e| AssembleError {
+        let size = usize::parse_unsigned($size).map_err(|e| AssembleError {
             pos: $size_pos,
             kind: AssembleErrorKind::ParseIntError(e),
         })?;
@@ -483,7 +483,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                                     op,
                                                     rs,
                                                     rt,
-                                                    u16::parse_maybe_neg(lit).map_err(|e| {
+                                                    u16::parse_maybe_signed(lit).map_err(|e| {
                                                         AssembleError {
                                                             pos,
                                                             kind: AssembleErrorKind::ParseIntError(
@@ -510,7 +510,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                             rt => new_load_i(
                                                 op,
                                                 rt,
-                                                u16::parse_maybe_neg(lit).map_err(|e| {
+                                                u16::parse_maybe_signed(lit).map_err(|e| {
                                                     AssembleError {
                                                         pos: lit_pos,
                                                         kind: AssembleErrorKind::ParseIntError(e),
@@ -568,7 +568,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                                     }
                                                 })?,
                                                 rt,
-                                                u16::parse_maybe_neg(offset).map_err(|e| {
+                                                u16::parse_signed(offset).map_err(|e| {
                                                     AssembleError {
                                                         pos: a.pos,
                                                         kind: AssembleErrorKind::ParseIntError(e),
@@ -594,7 +594,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                         } = a.kind
                                         {
                                             let offset =
-                                                u16::parse_maybe_neg(offset).map_err(|e| {
+                                                u16::parse_signed(offset).map_err(|e| {
                                                     AssembleError {
                                                         pos: a.pos,
                                                         kind: AssembleErrorKind::ParseIntError(e),
@@ -641,7 +641,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                         } = a.kind
                                         {
                                             let offset =
-                                                u16::parse_maybe_neg(offset).map_err(|e| {
+                                                u16::parse_signed(offset).map_err(|e| {
                                                     AssembleError {
                                                         pos: a.pos,
                                                         kind: AssembleErrorKind::ParseIntError(e),
@@ -743,7 +743,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                         rd = Some(expect_reg!(arguments));
                                         rt = expect_reg!(arguments).0;
                                         let (shamt_lit, lit_pos) = expect_num_lit!(arguments);
-                                        match u8::parse_non_neg(shamt_lit.clone()) {
+                                        match u8::parse_unsigned(shamt_lit.clone()) {
                                             Ok(s) => {
                                                 shamt = s;
                                                 if shamt > 16 {
@@ -844,7 +844,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                                 Op::ADDI,
                                                 Reg::Zero,
                                                 rt,
-                                                u16::parse_maybe_neg(lit).map_err(|e| {
+                                                u16::parse_maybe_signed(lit).map_err(|e| {
                                                     AssembleError {
                                                         pos,
                                                         kind: AssembleErrorKind::ParseIntError(e),
@@ -1626,14 +1626,13 @@ a: .byte -98 : 3
                 kind: AssembleErrorKind::ParseIntError(IntErrorKind::NegOverflow)
             }
         );
-        // TODO: fix this, this should've overflowed because it's going to look like a negative value
-        // asm_text_err_test!(
-        //     "sb $t0, 32768($t1)",
-        //     AssembleError {
-        //         pos: 15,
-        //         kind: AssembleErrorKind::ParseIntError(IntErrorKind::NegOverflow)
-        //     }
-        // );
+        asm_text_err_test!(
+            "sb $t0, 32768($t1)",
+            AssembleError {
+                pos: 14,
+                kind: AssembleErrorKind::ParseIntError(IntErrorKind::PosOverflow)
+            }
+        );
         asm_text_err_test!(
             "lhu $t0, 0xffffffffffffff($t1)",
             AssembleError {
