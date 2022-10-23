@@ -1272,9 +1272,9 @@ asdf 0"#,
     }
 
     macro_rules! parse_unsigned_tests {
-        ($t:ident) => {
+        ($t:ty) => {
             assert_eq!(
-                $t::parse_unsigned(NumLiteral {
+                <$t>::parse_unsigned(NumLiteral {
                     negative: false,
                     radix: 10,
                     body: "9"
@@ -1283,7 +1283,7 @@ asdf 0"#,
                 9
             );
             assert_eq!(
-                $t::parse_unsigned(NumLiteral {
+                <$t>::parse_unsigned(NumLiteral {
                     negative: true,
                     radix: 10,
                     body: "9"
@@ -1292,7 +1292,7 @@ asdf 0"#,
                 IntErrorKind::NegOverflow
             );
             assert_eq!(
-                $t::parse_unsigned(NumLiteral {
+                <$t>::parse_unsigned(NumLiteral {
                     negative: false,
                     radix: 2,
                     body: "010010110"
@@ -1301,7 +1301,7 @@ asdf 0"#,
                 150
             );
             assert_eq!(
-                $t::parse_unsigned(NumLiteral {
+                <$t>::parse_unsigned(NumLiteral {
                     negative: false,
                     radix: 36,
                     body: "10000000000000000000000000000000000000000000000000000"
@@ -1319,27 +1319,27 @@ asdf 0"#,
     }
 
     macro_rules! parse_maybe_signed_tests {
-        ($t:ident, $ts:ident) => {
+        ($t:ty, $ts:ty) => {
             assert_eq!(
-                $t::parse_maybe_signed(NumLiteral {
+                <$t>::parse_maybe_signed(NumLiteral {
                     negative: false,
                     radix: 10,
-                    body: &format!("{}", $t::MAX),
+                    body: &format!("{}", <$t>::MAX),
                 })
                 .unwrap(),
-                $t::MAX
+                <$t>::MAX
             );
             assert_eq!(
-                $t::parse_maybe_signed(NumLiteral {
+                <$t>::parse_maybe_signed(NumLiteral {
                     negative: true,
                     radix: 10,
-                    body: &format!("{}", ($ts::MIN + 1) * -1),
+                    body: &format!("{}", (<$ts>::MIN + 1) * -1),
                 })
                 .unwrap(),
-                ($ts::MIN + 1) as $t
+                (<$ts>::MIN + 1) as $t
             );
             assert_eq!(
-                $t::parse_maybe_signed(NumLiteral {
+                <$t>::parse_maybe_signed(NumLiteral {
                     negative: false,
                     radix: 2,
                     body: "010010110"
@@ -1348,7 +1348,7 @@ asdf 0"#,
                 150
             );
             assert_eq!(
-                $t::parse_maybe_signed(NumLiteral {
+                <$t>::parse_maybe_signed(NumLiteral {
                     negative: false,
                     radix: 36,
                     body: "10000000000000000000000000000000000000000000000000000"
@@ -1357,7 +1357,7 @@ asdf 0"#,
                 IntErrorKind::PosOverflow
             );
             assert_eq!(
-                $t::parse_maybe_signed(NumLiteral {
+                <$t>::parse_maybe_signed(NumLiteral {
                     negative: true,
                     radix: 36,
                     body: "10000000000000000000000000000000000000000000000000000"

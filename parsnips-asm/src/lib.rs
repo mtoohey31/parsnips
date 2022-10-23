@@ -210,12 +210,12 @@ macro_rules! expect_label {
 }
 
 macro_rules! push_int {
-    ($prog:expr, $value_t:ident, $value_pos:expr, $value:expr) => {{
-        let len = size_of::<$value_t>();
+    ($prog:expr, $value_ty:ty, $value_pos:expr, $value:expr) => {{
+        let len = size_of::<$value_ty>();
         let pad_len = pad_len(len);
         $prog.reserve(len + pad_len);
         $prog.extend_from_slice(
-            &$value_t::parse_maybe_signed($value)
+            &<$value_ty>::parse_maybe_signed($value)
                 .map_err(|e| AssembleError {
                     pos: $value_pos,
                     kind: AssembleErrorKind::ParseIntError(e),
@@ -227,8 +227,8 @@ macro_rules! push_int {
 }
 
 macro_rules! push_array {
-    ($prog:expr, $value_t:ident, $value_pos:expr, $value:expr, $size_pos:expr, $size:expr) => {{
-        let value = $value_t::parse_maybe_signed($value).map_err(|e| AssembleError {
+    ($prog:expr, $value_ty:ty, $value_pos:expr, $value:expr, $size_pos:expr, $size:expr) => {{
+        let value = <$value_ty>::parse_maybe_signed($value).map_err(|e| AssembleError {
             pos: $value_pos,
             kind: AssembleErrorKind::ParseIntError(e),
         })?;
@@ -236,7 +236,7 @@ macro_rules! push_array {
             pos: $size_pos,
             kind: AssembleErrorKind::ParseIntError(e),
         })?;
-        let len = size_of::<$value_t>() * size;
+        let len = size_of::<$value_ty>() * size;
         let pad_len = pad_len(len);
         $prog.reserve(len + pad_len);
         let value_bytes = value.to_le_bytes();
