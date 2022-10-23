@@ -248,18 +248,18 @@ macro_rules! push_array {
 }
 
 #[inline(always)]
-fn unescape(s: &str) -> Result<String, AssembleError> {
+fn unescape(s: &str, start_pos: usize) -> Result<String, AssembleError> {
     let mut unescaped = String::new();
     let mut ci = s.chars().enumerate();
-    while let Some((pos, c)) = ci.next() {
+    while let Some((bslsh_pos, c)) = ci.next() {
         unescaped.push(match c {
             '\\' => match ci.next() {
                 Some((_, 't')) => '\t',
                 Some((_, 'n')) => '\n',
                 Some((_, '\\')) => '\\',
-                Some((_, c)) => {
+                Some((invalid_pos, c)) => {
                     return Err(AssembleError {
-                        pos,
+                        pos: start_pos + invalid_pos,
                         kind: AssembleErrorKind::InvalidStrEscape(c),
                     })
                 }
@@ -269,7 +269,7 @@ fn unescape(s: &str) -> Result<String, AssembleError> {
                     // case shouldn't occur with a well-formed AST
                     // produced by lex and parse anyways so...
                     return Err(AssembleError {
-                        pos: pos + 1,
+                        pos: start_pos + bslsh_pos + 1,
                         kind: AssembleErrorKind::InvalidStrEscape(c),
                     });
                 }
@@ -310,8 +310,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
     let mut label_definitions = HashMap::new();
     let mut label_references = Vec::new();
     let mut initial_section_data: Option<bool> = None;
-    // an optional tuple of u32 byte index within the program and usize character index within the
-    // source code
+    // an optional tuple of u32 byte index within the program and usize character index within the source code
     let mut initial_text_section: Option<(u32, usize)> = None;
 
     for section in ast.sections {
@@ -378,7 +377,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                             DataValue::Char(c) => {
                                 if !c.is_ascii() {
                                     return Err(AssembleError {
-                                        pos: entry.decl.value_pos,
+                                        pos: entry.decl.value_pos + 1,
                                         kind: AssembleErrorKind::NonAsciiChar(c),
                                     });
                                 }
@@ -392,10 +391,10 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                         },
                         DataKind::Ascii => match entry.decl.value {
                             DataValue::String(s) => {
-                                let unescaped = unescape(s)?;
+                                let unescaped = unescape(s, entry.decl.value_pos + 1)?;
                                 let ascii_str =
                                     unescaped.as_ascii_str().map_err(|e| AssembleError {
-                                        pos: e.valid_up_to(),
+                                        pos: entry.decl.value_pos + 1 + e.valid_up_to(),
                                         kind: AssembleErrorKind::NonAsciiStr(e),
                                     })?;
                                 let bytes = ascii_str.as_bytes();
@@ -413,10 +412,10 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                         },
                         DataKind::Asciiz => match entry.decl.value {
                             DataValue::String(s) => {
-                                let unescaped = unescape(s)?;
+                                let unescaped = unescape(s, entry.decl.value_pos + 1)?;
                                 let ascii_str =
                                     unescaped.as_ascii_str().map_err(|e| AssembleError {
-                                        pos: e.valid_up_to(),
+                                        pos: entry.decl.value_pos + 1 + e.valid_up_to(),
                                         kind: AssembleErrorKind::NonAsciiStr(e),
                                     })?;
                                 let bytes = ascii_str.as_bytes();
@@ -563,7 +562,9 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                                 Reg::try_from(register).map_err(|_| {
                                                     AssembleError {
                                                         pos: register_pos,
-                                                        kind: AssembleErrorKind::UnknownReg(name),
+                                                        kind: AssembleErrorKind::UnknownReg(
+                                                            register,
+                                                        ),
                                                     }
                                                 })?,
                                                 rt,
@@ -613,7 +614,9 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                                 Reg::try_from(register).map_err(|_| {
                                                     AssembleError {
                                                         pos: register_pos,
-                                                        kind: AssembleErrorKind::UnknownReg(name),
+                                                        kind: AssembleErrorKind::UnknownReg(
+                                                            register,
+                                                        ),
                                                     }
                                                 })?,
                                                 rt,
@@ -658,7 +661,9 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                                 Reg::try_from(register).map_err(|_| {
                                                     AssembleError {
                                                         pos: register_pos,
-                                                        kind: AssembleErrorKind::UnknownReg(name),
+                                                        kind: AssembleErrorKind::UnknownReg(
+                                                            register,
+                                                        ),
                                                     }
                                                 })?,
                                                 rt,
@@ -762,7 +767,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                                         }
                                                         _ => AssembleErrorKind::ParseIntError(e),
                                                     },
-                                                })
+                                                });
                                             }
                                         };
                                     }
@@ -896,6 +901,8 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
             pos: reference.pos,
             kind,
         })?;
+        // TODO: remove all align_to's because these aren't guaranteed to do what we want; they
+        // might have prefixes/suffixes
         unsafe { program[reference.location..].align_to_mut::<u32>() }.1[0] |= imm.to_le();
     }
 
@@ -920,8 +927,8 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::borrow::ToOwned;
-    use parsnips_parser::parse;
+    use alloc::{borrow::ToOwned, format, vec};
+    use parsnips_parser::{parse, Argument, Data, Entry, Section};
     use pretty_assertions::assert_eq;
 
     fn str_to_u32(input: &str) -> u32 {
@@ -951,13 +958,25 @@ mod tests {
 
     macro_rules! asm_text_test {
         ($s:expr,$($x:expr),+ $(,)?) => {
-            asm_test!(&("    .text\n".to_owned() + $s), $($x),+)
+            asm_test!(&(".text\n".to_owned() + $s), $($x),+)
         }
     }
 
-    macro_rules! asm_err_text_test {
+    macro_rules! asm_text_err_test {
         ($s:expr,$err:expr) => {
-            asm_err_test!(&("    .text\n".to_owned() + $s), $err)
+            asm_err_test!(&(".text\n".to_owned() + $s), $err)
+        };
+    }
+
+    macro_rules! asm_data_test {
+        ($s:expr,$($x:expr),+ $(,)?) => {
+            asm_test!(&(".text\n.data\n".to_owned() + $s), $($x),+)
+        }
+    }
+
+    macro_rules! asm_data_err_test {
+        ($s:expr,$err:expr) => {
+            asm_err_test!(&(".text\n.data\n".to_owned() + $s), $err)
         };
     }
 
@@ -1132,24 +1151,24 @@ mod tests {
 
     #[test]
     fn invalid_dest() {
-        asm_err_text_test!(
+        asm_text_err_test!(
             "addi $zero, $zero, 0",
             AssembleError {
-                pos: 15,
+                pos: 11,
                 kind: AssembleErrorKind::InvalidDestination
             }
         );
-        asm_err_text_test!(
+        asm_text_err_test!(
             "lhi $zero, 94",
             AssembleError {
-                pos: 14,
+                pos: 10,
                 kind: AssembleErrorKind::InvalidDestination
             }
         );
-        asm_err_text_test!(
+        asm_text_err_test!(
             "add $zero, $zero, $zero",
             AssembleError {
-                pos: 14,
+                pos: 10,
                 kind: AssembleErrorKind::InvalidDestination
             }
         );
@@ -1157,25 +1176,25 @@ mod tests {
 
     #[test]
     fn unknown_instruction() {
-        asm_err_text_test!(
+        asm_text_err_test!(
             "reg $t0, $t0, $t0",
             AssembleError {
-                pos: 10,
+                pos: 6,
                 kind: AssembleErrorKind::UnknownInstruction("reg")
             }
         );
-        asm_err_text_test!(
+        asm_text_err_test!(
             "bogus $t0, $t0, $t0",
             AssembleError {
-                pos: 10,
+                pos: 6,
                 kind: AssembleErrorKind::UnknownInstruction("bogus")
             }
         );
         // identifiers are case sensitive
-        asm_err_text_test!(
+        asm_text_err_test!(
             "ADD $t0, $t0, $t0",
             AssembleError {
-                pos: 10,
+                pos: 6,
                 kind: AssembleErrorKind::UnknownInstruction("ADD")
             }
         );
@@ -1183,24 +1202,24 @@ mod tests {
 
     #[test]
     fn redeclared_label() {
-        asm_err_text_test!(
+        asm_text_err_test!(
             r#"
 EXIT:
 EXIT:
             "#,
             AssembleError {
-                pos: 17,
+                pos: 13,
                 kind: AssembleErrorKind::RedeclaredLabel("EXIT")
             }
         );
-        asm_err_text_test!(
+        asm_text_err_test!(
             r#"
 EXIT:
     .text
 EXIT:
             "#,
             AssembleError {
-                pos: 27,
+                pos: 23,
                 kind: AssembleErrorKind::RedeclaredLabel("EXIT")
             }
         );
@@ -1208,17 +1227,17 @@ EXIT:
 
     #[test]
     fn misaligned_offset() {
-        asm_err_text_test!(
+        asm_text_err_test!(
             "lh $t0, 1($t1)",
             AssembleError {
-                pos: 18,
+                pos: 14,
                 kind: AssembleErrorKind::MisalignedOffset(1)
             }
         );
-        asm_err_text_test!(
+        asm_text_err_test!(
             "lw $t0, 2($t1)",
             AssembleError {
-                pos: 18,
+                pos: 14,
                 kind: AssembleErrorKind::MisalignedOffset(2)
             }
         );
@@ -1226,10 +1245,10 @@ EXIT:
 
     #[test]
     fn unexpected_arg() {
-        asm_err_text_test!(
+        asm_text_err_test!(
             "addi $t0, $zero, 4, 9",
             AssembleError {
-                pos: 30,
+                pos: 26,
                 kind: AssembleErrorKind::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(
                     NumLiteral {
                         negative: false,
@@ -1239,10 +1258,10 @@ EXIT:
                 )))
             }
         );
-        asm_err_text_test!(
+        asm_text_err_test!(
             "sb $t0, 0",
             AssembleError {
-                pos: 18,
+                pos: 14,
                 kind: AssembleErrorKind::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(
                     NumLiteral {
                         negative: false,
@@ -1252,10 +1271,10 @@ EXIT:
                 )))
             }
         );
-        asm_err_text_test!(
+        asm_text_err_test!(
             "sh $t0, 0",
             AssembleError {
-                pos: 18,
+                pos: 14,
                 kind: AssembleErrorKind::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(
                     NumLiteral {
                         negative: false,
@@ -1265,10 +1284,10 @@ EXIT:
                 )))
             }
         );
-        asm_err_text_test!(
+        asm_text_err_test!(
             "sw $t0, 0",
             AssembleError {
-                pos: 18,
+                pos: 14,
                 kind: AssembleErrorKind::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(
                     NumLiteral {
                         negative: false,
@@ -1278,10 +1297,10 @@ EXIT:
                 )))
             }
         );
-        asm_err_text_test!(
+        asm_text_err_test!(
             "syscall 0",
             AssembleError {
-                pos: 18,
+                pos: 14,
                 kind: AssembleErrorKind::UnexpectedArgument(ArgumentKind::Literal(Literal::Num(
                     NumLiteral {
                         negative: false,
@@ -1295,10 +1314,10 @@ EXIT:
 
     #[test]
     fn bad_shamt() {
-        asm_err_text_test!(
+        asm_text_err_test!(
             "sll $t0, $t0, 17",
             AssembleError {
-                pos: 24,
+                pos: 20,
                 kind: AssembleErrorKind::OverflowingShamt(NumLiteral {
                     negative: false,
                     radix: 10,
@@ -1306,10 +1325,10 @@ EXIT:
                 })
             }
         );
-        asm_err_text_test!(
+        asm_text_err_test!(
             "sll $t0, $t0, -1",
             AssembleError {
-                pos: 24,
+                pos: 20,
                 kind: AssembleErrorKind::OverflowingShamt(NumLiteral {
                     negative: true,
                     radix: 10,
@@ -1317,10 +1336,10 @@ EXIT:
                 })
             }
         );
-        asm_err_text_test!(
+        asm_text_err_test!(
             "sll $t0, $t0, 50000",
             AssembleError {
-                pos: 24,
+                pos: 20,
                 kind: AssembleErrorKind::OverflowingShamt(NumLiteral {
                     negative: false,
                     radix: 10,
@@ -1365,7 +1384,7 @@ EXIT: syscall
             new_jump(Op::J) | 0,
             SYSCALL
         );
-        asm_text_test!("syscall", SYSCALL)
+        asm_text_test!("syscall", SYSCALL);
     }
 
     #[test]
@@ -1397,6 +1416,384 @@ EXIT: syscall
         asm_text_test!(
             "mthi $t0",
             new_reg(Reg::T0, Reg::Zero, Reg::Zero, 0, Funct::MTHI)
+        );
+    }
+
+    #[test]
+    fn data() {
+        // nums
+        asm_data_test!(
+            r#"
+a: .word 37
+a: .word -37
+a: .hword 3007
+a: .half -3006
+a: .byte -7
+            "#,
+            37,
+            -37 as i32 as u32,
+            u32::from_le_bytes([3007_u16.to_le_bytes()[0], 3007_u16.to_le_bytes()[1], 0, 0]),
+            u32::from_le_bytes([
+                (-3006_i16).to_le_bytes()[0],
+                (-3006_i16).to_le_bytes()[1],
+                0,
+                0
+            ]),
+            u32::from_le_bytes([-7_i8 as u8, 0, 0, 0]),
+        );
+
+        // chars
+        asm_data_test!("a: .byte 'a'", u32::from_le_bytes(['a' as u8, 0, 0, 0]));
+        asm_data_err_test!(
+            "a: .byte '😄'",
+            AssembleError {
+                pos: 22,
+                kind: AssembleErrorKind::NonAsciiChar('😄'),
+            }
+        );
+
+        // strings
+        asm_data_test!(
+            r#"
+a: .ascii "hello world"
+a: .ascii "hello\two\\ld\n"
+a: .asciiz "hello\two\\ld\n"
+            "#,
+            str_to_u32("hell"),
+            str_to_u32("o wo"),
+            str_to_u32("rld\0"),
+            str_to_u32("hell"),
+            str_to_u32("o\two"),
+            str_to_u32("\\ld\n"),
+            str_to_u32("hell"),
+            str_to_u32("o\two"),
+            str_to_u32("\\ld\n"),
+            // asciiz requires that there be at least one byte of padding
+            0
+        );
+        asm_data_err_test!(
+            "a: .ascii \"hello\\oworld\"",
+            AssembleError {
+                pos: 29,
+                kind: AssembleErrorKind::InvalidStrEscape('o')
+            }
+        );
+        let err = assemble(parse(".data\na: .ascii \"hello 😄\"").unwrap()).unwrap_err();
+        assert_eq!(err.pos, 23);
+        assert!(matches!(err.kind, AssembleErrorKind::NonAsciiStr(_)));
+        let err = assemble(parse(".data\na: .asciiz \"hello 😄\"").unwrap()).unwrap_err();
+        assert_eq!(err.pos, 24);
+        assert!(matches!(err.kind, AssembleErrorKind::NonAsciiStr(_)));
+        assert_eq!(
+            assemble(Ast {
+                sections: vec![Section {
+                    pos: 0,
+                    kind: SectionKind::Data(vec![Data {
+                        pos: 0,
+                        label: "",
+                        decl: DataDeclaration {
+                            pos: 0,
+                            kind: DataKind::Ascii,
+                            value_pos: 37,
+                            value: DataValue::String("123\\"),
+                        }
+                    }])
+                }],
+                eof_pos: 0,
+            })
+            .unwrap_err(),
+            AssembleError {
+                pos: 42,
+                kind: AssembleErrorKind::InvalidStrEscape('\\')
+            }
+        );
+
+        // idents
+        asm_data_test!(
+            r#"
+a: .word 1
+b: .word 1
+c: .word b
+            "#,
+            1,
+            1,
+            4
+        );
+
+        // arrays
+        asm_data_test!(
+            r#"
+a: .word -98 : 3
+a: .half -980 : 3
+a: .byte -98 : 3
+                    "#,
+            -98_i32 as u32,
+            -98_i32 as u32,
+            -98_i32 as u32,
+            u32::from_le_bytes([
+                (-980_i16).to_le_bytes()[0],
+                (-980_i16).to_le_bytes()[1],
+                (-980_i16).to_le_bytes()[0],
+                (-980_i16).to_le_bytes()[1],
+            ]),
+            u32::from_le_bytes([
+                (-980_i16).to_le_bytes()[0],
+                (-980_i16).to_le_bytes()[1],
+                0,
+                0
+            ]),
+            u32::from_le_bytes([
+                (-98_i8).to_le_bytes()[0],
+                (-98_i8).to_le_bytes()[0],
+                (-98_i8).to_le_bytes()[0],
+                0
+            ]),
+        );
+        asm_data_err_test!(
+            "a: .word -98 : -3",
+            AssembleError {
+                pos: 27,
+                kind: AssembleErrorKind::ParseIntError(IntErrorKind::NegOverflow)
+            }
+        );
+
+        // illegal combinations
+        asm_data_err_test!(
+            "a: .word 'a'",
+            AssembleError {
+                pos: 21,
+                kind: AssembleErrorKind::IllegalDataKindValueCombination(
+                    DataKind::Word,
+                    DataValue::Char('a')
+                )
+            }
+        );
+        asm_data_err_test!(
+            "a: .half a",
+            AssembleError {
+                pos: 21,
+                kind: AssembleErrorKind::IllegalDataKindValueCombination(
+                    DataKind::HalfWord,
+                    DataValue::Ident("a")
+                )
+            }
+        );
+        asm_data_err_test!(
+            "a: .byte a",
+            AssembleError {
+                pos: 21,
+                kind: AssembleErrorKind::IllegalDataKindValueCombination(
+                    DataKind::Byte,
+                    DataValue::Ident("a")
+                )
+            }
+        );
+        asm_data_err_test!(
+            "a: .ascii a",
+            AssembleError {
+                pos: 22,
+                kind: AssembleErrorKind::IllegalDataKindValueCombination(
+                    DataKind::Ascii,
+                    DataValue::Ident("a")
+                )
+            }
+        );
+        asm_data_err_test!(
+            "a: .asciiz a",
+            AssembleError {
+                pos: 23,
+                kind: AssembleErrorKind::IllegalDataKindValueCombination(
+                    DataKind::Asciiz,
+                    DataValue::Ident("a")
+                )
+            }
+        );
+    }
+
+    #[test]
+    fn literal_overflows() {
+        asm_text_err_test!(
+            "addi $t0, $t1, 65536",
+            AssembleError {
+                pos: 21,
+                kind: AssembleErrorKind::ParseIntError(IntErrorKind::PosOverflow)
+            }
+        );
+        asm_text_err_test!(
+            "lhi $t0, -32769",
+            AssembleError {
+                pos: 15,
+                kind: AssembleErrorKind::ParseIntError(IntErrorKind::NegOverflow)
+            }
+        );
+        // TODO: fix this, this should've overflowed because it's going to look like a negative value
+        // asm_text_err_test!(
+        //     "sb $t0, 32768($t1)",
+        //     AssembleError {
+        //         pos: 15,
+        //         kind: AssembleErrorKind::ParseIntError(IntErrorKind::NegOverflow)
+        //     }
+        // );
+        asm_text_err_test!(
+            "lhu $t0, 0xffffffffffffff($t1)",
+            AssembleError {
+                pos: 15,
+                kind: AssembleErrorKind::ParseIntError(IntErrorKind::PosOverflow)
+            }
+        );
+        asm_text_err_test!(
+            "lw $t0, 0b1000000000000000000000000000($t1)",
+            AssembleError {
+                pos: 14,
+                kind: AssembleErrorKind::ParseIntError(IntErrorKind::PosOverflow)
+            }
+        );
+        asm_text_err_test!(
+            "sll $t0, $t0, 0xf1",
+            AssembleError {
+                pos: 20,
+                kind: AssembleErrorKind::OverflowingShamt(NumLiteral {
+                    negative: false,
+                    radix: 16,
+                    body: "f1"
+                })
+            }
+        );
+        assert_eq!(
+            assemble(Ast {
+                sections: vec![Section {
+                    pos: 0,
+                    kind: SectionKind::Text(vec![Entry {
+                        pos: 0,
+                        kind: EntryKind::Instruction(Instruction {
+                            name: "sll",
+                            args: vec![
+                                Argument {
+                                    pos: 0,
+                                    kind: ArgumentKind::Register("t0")
+                                },
+                                Argument {
+                                    pos: 0,
+                                    kind: ArgumentKind::Register("t1")
+                                },
+                                Argument {
+                                    pos: 37,
+                                    kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                        negative: false,
+                                        radix: 10,
+                                        body: ""
+                                    }))
+                                },
+                            ],
+                            end_pos: 0,
+                        })
+                    }]),
+                }],
+                eof_pos: 0
+            })
+            .unwrap_err(),
+            AssembleError {
+                pos: 37,
+                kind: AssembleErrorKind::ParseIntError(IntErrorKind::Empty),
+            }
+        );
+    }
+
+    #[test]
+    fn unknown_reg() {
+        asm_text_err_test!(
+            "lb $t0, 4($uhoh)",
+            AssembleError {
+                pos: 16,
+                kind: AssembleErrorKind::UnknownReg("uhoh")
+            }
+        );
+        asm_text_err_test!(
+            "lhu $t0, 0($eax)",
+            AssembleError {
+                pos: 17,
+                kind: AssembleErrorKind::UnknownReg("eax")
+            }
+        );
+        asm_text_err_test!(
+            "lw $t0, 0($rdx)",
+            AssembleError {
+                pos: 16,
+                kind: AssembleErrorKind::UnknownReg("rdx")
+            }
+        );
+    }
+
+    #[test]
+    fn reference_errors() {
+        asm_text_err_test!(
+            "j EXIT",
+            AssembleError {
+                pos: 8,
+                kind: AssembleErrorKind::UndefinedLabel("EXIT")
+            }
+        );
+        asm_err_test!(
+            &format!(
+                r#"
+    .text
+la $t0, VAL
+    .data
+_: .word 0:{}
+VAL: .byte 'v'
+            "#,
+                i16::MAX / 4 + 7
+            ),
+            AssembleError {
+                pos: 19,
+                kind: AssembleErrorKind::OverflowingLabelReference((i16::MAX as u32 / 4 + 8) * 4),
+            }
+        );
+    }
+
+    #[test]
+    fn initial_jump() {
+        asm_test!(
+            r#"
+    .data
+a: .byte 'a'
+    .text
+syscall
+            "#,
+            new_jump(Op::J) | 1,
+            str_to_u32("a\0\0\0"),
+            SYSCALL,
+        );
+        asm_test!(
+            r#"
+    .data
+    .text
+syscall
+            "#,
+            new_jump(Op::J) | 0,
+            SYSCALL,
+        );
+    }
+
+    // this test is ignored by default because it requires allocating an unreasonnably large
+    // program in order to cause the overflow
+    #[ignore]
+    #[test]
+    fn initial_jump_overflow() {
+        asm_err_test!(
+            &format!(
+                r#"
+    .data
+_: .word 0:{}
+    .text
+syscall
+            "#,
+                1 << 26
+            ),
+            AssembleError {
+                pos: 35,
+                kind: AssembleErrorKind::OverflowingLabelReference(1 << 26)
+            }
         );
     }
 }
