@@ -78,6 +78,7 @@ pub enum ArgumentKind<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(Clone, Copy))]
 pub enum Literal<'a> {
     Num(NumLiteral<'a>),
     Char(char),
@@ -85,6 +86,7 @@ pub enum Literal<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(test, derive(Copy))]
 pub struct NumLiteral<'a> {
     // this is a field because we can't take a slice of the input that
     // includes just the sign and the number body when there's a 0b, 0o, 0x
@@ -198,7 +200,7 @@ impl ParseMaybeNeg for u32 {
 pub struct Data<'a> {
     pub pos: usize,
     pub label: &'a str,
-    pub value: DataDeclaration<'a>,
+    pub decl: DataDeclaration<'a>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -237,6 +239,15 @@ pub struct ParseError<'a> {
     kind: ParseErrorKind<'a>,
 }
 
+impl<'a> From<Token<'a>> for ParseError<'a> {
+    fn from(t: Token<'a>) -> Self {
+        ParseError {
+            pos: t.pos,
+            kind: ParseErrorKind::UnexpectedToken(t.kind),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseErrorKind<'a> {
     LexError(LexError),
@@ -256,10 +267,7 @@ macro_rules! expect {
                 if $t == t.kind {
                     Ok(())
                 } else {
-                    Err(ParseError {
-                        pos: t.pos,
-                        kind: ParseErrorKind::UnexpectedToken(t.kind),
-                    })
+                    Err(ParseError::from(t))
                 }
             }
             None => Err(ParseError {
@@ -277,10 +285,7 @@ macro_rules! expect_ident {
                 if let TokenKind::Ident(s) = t.kind {
                     Ok((s, t.pos))
                 } else {
-                    Err(ParseError {
-                        pos: t.pos,
-                        kind: ParseErrorKind::UnexpectedToken(t.kind),
-                    })
+                    Err(ParseError::from(t))
                 }
             }
             None => Err(ParseError {
@@ -298,10 +303,7 @@ macro_rules! expect_literal {
                 if let TokenKind::Literal(l) = t.kind {
                     Ok((l, t.pos))
                 } else {
-                    Err(ParseError {
-                        pos: t.pos,
-                        kind: ParseErrorKind::UnexpectedToken(t.kind),
-                    })
+                    Err(ParseError::from(t))
                 }
             }
             None => Err(ParseError {
@@ -332,12 +334,15 @@ macro_rules! skip_at_least_one_whitespace {
             }),
             Some(_) => {
                 let t = $ti.next().unwrap();
-                Err(ParseError {
-                    pos: t.pos,
-                    kind: ParseErrorKind::UnexpectedToken(t.kind),
-                })
+                Err(ParseError::from(t))
             }
         }
+    }};
+}
+
+macro_rules! impossible_whitespace {
+    () => {{
+        panic!("encountered whitespace after skipping whitespace");
     }};
 }
 
@@ -378,30 +383,22 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                     }
                     TokenKind::Ident(d) => {
                         return Err(ParseError {
-                            pos: tn.pos,
+                            pos: t.pos,
                             kind: ParseErrorKind::UnknownDirective(d),
                         })
                     }
-                    _ => {
-                        return Err(ParseError {
-                            pos: tn.pos,
-                            kind: ParseErrorKind::UnexpectedToken(tn.kind),
-                        })
-                    }
+                    _ => return Err(ParseError::from(tn)),
                 }
-                expect!(ti, TokenKind::Newline, skip_whitespace!(ti, tn.pos))?;
+                let pos = skip_whitespace!(ti, tn.pos);
+                expect!(ti, TokenKind::Newline, pos)?;
             }
-            TokenKind::Comma => todo!(),
-            TokenKind::Colon => todo!(),
-            TokenKind::OpenParen => todo!(),
-            TokenKind::CloseParen => todo!(),
-            TokenKind::Dollar => todo!(),
-            TokenKind::Whitespace => {}
-            TokenKind::Newline => {}
             TokenKind::Ident(i) => {
                 let s = match cs.as_mut() {
                     Some(s) => s,
-                    None => todo!(),
+                    None => {
+                        // TODO: return something more helpful instructing the user to begin a section first
+                        return Err(ParseError::from(t));
+                    }
                 };
                 match &mut s.kind {
                     SectionKind::Data(data) => {
@@ -425,54 +422,64 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                         data.push(Data {
                             pos: t.pos,
                             label: i,
-                            value: DataDeclaration {
+                            decl: DataDeclaration {
                                 pos: dot_pos,
                                 kind,
                                 value_pos: tn.pos,
                                 value: match tn.kind {
-                                    TokenKind::Dot => todo!(),
-                                    TokenKind::Comma => todo!(),
-                                    TokenKind::Colon => todo!(),
-                                    TokenKind::OpenParen => todo!(),
-                                    TokenKind::CloseParen => todo!(),
-                                    TokenKind::Dollar => todo!(),
-                                    TokenKind::Whitespace => todo!(),
-                                    TokenKind::Newline => todo!(),
                                     TokenKind::Ident(_) => todo!(),
                                     TokenKind::Literal(Literal::Num(value)) => {
                                         skip_whitespace!(ti, tn.pos);
-                                        let t = match ti.next() {
-                                            Some(t) => t,
-                                            None => todo!(),
-                                        };
-                                        match t.kind {
-                                            TokenKind::Dot => todo!(),
-                                            TokenKind::Comma => todo!(),
-                                            TokenKind::Colon => {
-                                                let pos = skip_whitespace!(ti, t.pos);
-                                                let (size_lit, size_pos) =
-                                                    expect_literal!(ti, pos)?;
-                                                match size_lit {
-                                                    Literal::Num(size) => DataValue::Array {
-                                                        value,
-                                                        size_pos,
-                                                        size,
-                                                    },
-                                                    Literal::Char(_) => todo!(),
-                                                    Literal::Str(_) => todo!(),
+                                        match ti.next() {
+                                            Some(t) => match t.kind {
+                                                TokenKind::Colon => {
+                                                    let pos = skip_whitespace!(ti, t.pos);
+                                                    let (size_lit, size_pos) =
+                                                        expect_literal!(ti, pos)?;
+                                                    match size_lit {
+                                                        Literal::Num(size) => DataValue::Array {
+                                                            value,
+                                                            size_pos,
+                                                            size,
+                                                        },
+                                                        Literal::Char(_) | Literal::Str(_) => {
+                                                            return Err(ParseError {
+                                                                pos: size_pos,
+                                                                kind:
+                                                                    ParseErrorKind::UnexpectedToken(
+                                                                        TokenKind::Literal(
+                                                                            size_lit,
+                                                                        ),
+                                                                    ),
+                                                            });
+                                                        }
+                                                    }
                                                 }
-                                            }
-                                            TokenKind::OpenParen => todo!(),
-                                            TokenKind::CloseParen => todo!(),
-                                            TokenKind::Dollar => todo!(),
-                                            TokenKind::Whitespace => todo!(),
-                                            TokenKind::Newline => DataValue::Int(value),
-                                            TokenKind::Ident(_) => todo!(),
-                                            TokenKind::Literal(_) => todo!(),
+                                                TokenKind::Newline => DataValue::Int(value),
+                                                TokenKind::Dot
+                                                | TokenKind::Comma
+                                                | TokenKind::OpenParen
+                                                | TokenKind::CloseParen
+                                                | TokenKind::Dollar
+                                                | TokenKind::Ident(_)
+                                                | TokenKind::Literal(_) => {
+                                                    return Err(ParseError::from(t))
+                                                }
+                                                TokenKind::Whitespace => impossible_whitespace!(),
+                                            },
+                                            None => DataValue::Int(value),
                                         }
                                     }
                                     TokenKind::Literal(Literal::Char(_)) => todo!(),
                                     TokenKind::Literal(Literal::Str(s)) => DataValue::String(s),
+                                    TokenKind::Dot
+                                    | TokenKind::Comma
+                                    | TokenKind::Colon
+                                    | TokenKind::OpenParen
+                                    | TokenKind::CloseParen
+                                    | TokenKind::Dollar
+                                    | TokenKind::Newline => return Err(ParseError::from(tn)),
+                                    TokenKind::Whitespace => impossible_whitespace!(),
                                 },
                             },
                         })
@@ -488,108 +495,36 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                 kind: EntryKind::Label(i),
                             })
                         } else {
-                            let entry_pos = t.pos;
                             // This is an instruction
+                            let pos = t.pos;
                             let name = i;
                             let mut args = Vec::new();
+                            let mut end_pos = skip_whitespace!(ti, t.pos + i.len());
 
-                            let pos = skip_whitespace!(ti, t.pos);
-                            let tn = match ti.next() {
-                                Some(t) => t,
-                                None => {
-                                    entries.push(Entry {
-                                        pos: entry_pos,
-                                        kind: EntryKind::Instruction(Instruction {
-                                            name,
-                                            args,
-                                            end_pos: pos,
-                                        }),
-                                    });
-                                    continue;
-                                }
-                            };
-                            match tn.kind {
-                                TokenKind::Newline => {
-                                    entries.push(Entry {
-                                        pos: entry_pos,
-                                        kind: EntryKind::Instruction(Instruction {
-                                            name,
-                                            args,
-                                            end_pos: tn.pos,
-                                        }),
-                                    });
-                                    continue;
-                                }
-                                TokenKind::Dollar => args.push(Argument {
-                                    pos: tn.pos,
-                                    kind: ArgumentKind::Register(expect_ident!(ti, tn.pos)?.0),
-                                }),
-                                TokenKind::Ident(i) => {
-                                    args.push(Argument {
-                                        pos: tn.pos,
-                                        kind: ArgumentKind::Label(i),
-                                    });
-                                }
-                                TokenKind::Literal(l) => args.push(Argument {
-                                    pos: tn.pos,
-                                    kind: ArgumentKind::Literal(l),
-                                }),
-                                TokenKind::Dot => todo!(),
-                                TokenKind::Comma => todo!(),
-                                TokenKind::Colon => todo!(),
-                                TokenKind::OpenParen => todo!(),
-                                TokenKind::CloseParen => todo!(),
-                                TokenKind::Whitespace => todo!(),
-                            }
-
+                            let mut is_first = true;
                             loop {
-                                let pos = skip_whitespace!(ti, pos);
                                 let t = match ti.next() {
                                     Some(t) => t,
                                     None => {
-                                        entries.push(Entry {
-                                            pos: entry_pos,
-                                            kind: EntryKind::Instruction(Instruction {
-                                                name,
-                                                args,
-                                                end_pos: pos,
-                                            }),
-                                        });
-                                        break;
+                                        if is_first {
+                                            break;
+                                        } else {
+                                            return Err(ParseError {
+                                                pos: end_pos + 1,
+                                                kind: ParseErrorKind::UnexpectedEOF,
+                                            });
+                                        }
                                     }
                                 };
                                 match t.kind {
-                                    TokenKind::Comma => {} // Get next arg
                                     TokenKind::Newline => {
-                                        entries.push(Entry {
-                                            pos: entry_pos,
-                                            kind: EntryKind::Instruction(Instruction {
-                                                name,
-                                                args,
-                                                end_pos: t.pos,
-                                            }),
-                                        });
-                                        break;
+                                        if is_first {
+                                            end_pos = t.pos;
+                                            break;
+                                        } else {
+                                            return Err(ParseError::from(t));
+                                        }
                                     }
-                                    u => {
-                                        return Err(ParseError {
-                                            pos,
-                                            kind: ParseErrorKind::UnexpectedToken(u),
-                                        })
-                                    }
-                                };
-
-                                let pos = skip_whitespace!(ti, t.pos);
-                                let t = match ti.next() {
-                                    Some(t) => t,
-                                    None => {
-                                        return Err(ParseError {
-                                            pos,
-                                            kind: ParseErrorKind::UnexpectedEOF,
-                                        });
-                                    }
-                                };
-                                match t.kind {
                                     TokenKind::Dollar => {
                                         args.push(Argument {
                                             pos: t.pos,
@@ -626,21 +561,62 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                             })
                                         }
                                     }
-                                    TokenKind::Dot => todo!(),
-                                    TokenKind::Comma => todo!(),
-                                    TokenKind::Colon => todo!(),
-                                    TokenKind::OpenParen => todo!(),
-                                    TokenKind::CloseParen => todo!(),
-                                    TokenKind::Whitespace => todo!(),
-                                    TokenKind::Newline => todo!(),
-                                    TokenKind::Literal(_) => todo!(),
+                                    TokenKind::Dot
+                                    | TokenKind::Comma
+                                    | TokenKind::Colon
+                                    | TokenKind::OpenParen
+                                    | TokenKind::CloseParen
+                                    | TokenKind::Literal(_) => return Err(ParseError::from(t)),
+                                    TokenKind::Whitespace => impossible_whitespace!(),
                                 }
+
+                                end_pos = skip_whitespace!(ti, t.pos);
+                                let t = match ti.next() {
+                                    None => {
+                                        end_pos += 1;
+                                        break;
+                                    }
+                                    Some(t) => t,
+                                };
+                                match t.kind {
+                                    TokenKind::Newline => {
+                                        end_pos = t.pos;
+                                        break;
+                                    }
+                                    TokenKind::Comma => {} // continue the loop and get the next arg
+                                    TokenKind::Dot
+                                    | TokenKind::Colon
+                                    | TokenKind::OpenParen
+                                    | TokenKind::CloseParen
+                                    | TokenKind::Dollar
+                                    | TokenKind::Ident(_)
+                                    | TokenKind::Literal(_) => return Err(ParseError::from(t)),
+                                    TokenKind::Whitespace => impossible_whitespace!(),
+                                };
+
+                                end_pos = skip_whitespace!(ti, t.pos);
+                                is_first = false;
                             }
+
+                            entries.push(Entry {
+                                pos,
+                                kind: EntryKind::Instruction(Instruction {
+                                    name,
+                                    args,
+                                    end_pos,
+                                }),
+                            })
                         }
                     }
                 };
             }
-            TokenKind::Literal(_) => todo!(),
+            TokenKind::Whitespace | TokenKind::Newline => {}
+            TokenKind::Comma
+            | TokenKind::Colon
+            | TokenKind::OpenParen
+            | TokenKind::CloseParen
+            | TokenKind::Dollar
+            | TokenKind::Literal(_) => return Err(ParseError::from(t)),
         }
     }
     if let Some(s) = cs {
@@ -652,8 +628,618 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
+    use crate::lex::LexErrorKind;
+    use alloc::{borrow::ToOwned, vec};
     use pretty_assertions::assert_eq;
+
+    macro_rules! parse_test {
+        ($s:expr, $a:expr) => {
+            assert_eq!(parse($s).unwrap(), $a)
+        };
+    }
+
+    macro_rules! parse_err_test {
+        ($s:expr, $e:expr) => {
+            assert_eq!(parse($s).unwrap_err(), $e)
+        };
+    }
+
+    macro_rules! parse_text_test {
+        ($s:expr, $($e:expr),+ $(,)?) => {
+            assert_eq!(parse(&(".text\n".to_owned() + $s)).unwrap().sections[0].kind, SectionKind::Text(vec![$($e),+]));
+        };
+    }
+
+    macro_rules! parse_text_err_test {
+        ($s:expr, $e:expr) => {
+            parse_err_test!(&(".text\n".to_owned() + $s), $e)
+        };
+    }
+
+    macro_rules! parse_data_test {
+        ($s:expr, $($d:expr),+ $(,)?) => {
+            assert_eq!(parse(&(".data\n".to_owned() + $s)).unwrap().sections[0].kind, SectionKind::Data(vec![$($d),+]));
+        };
+    }
+
+    macro_rules! parse_data_err_test {
+        ($s:expr, $e:expr) => {
+            parse_err_test!(&(".data\n".to_owned() + $s), $e)
+        };
+    }
+
+    macro_rules! token_kind_tuple {
+        ($s:expr) => {
+            ($s, lex($s).unwrap()[0].kind)
+        };
+    }
+
+    macro_rules! token_kind_tuples {
+        ($($s:expr),+ $(,)?) => {
+            [$(token_kind_tuple!($s)),+]
+        };
+    }
+
+    #[test]
+    fn lex_error() {
+        parse_text_err_test!(
+            "!",
+            ParseError {
+                pos: 6,
+                kind: ParseErrorKind::LexError(LexError {
+                    pos: 6,
+                    kind: LexErrorKind::UnexpectedToken('!')
+                })
+            }
+        )
+    }
+
+    #[test]
+    fn sections() {
+        parse_test!(
+            r#"
+.data
+.text
+.text
+.data
+.data
+            "#,
+            Ast {
+                sections: vec![
+                    Section {
+                        pos: 1,
+                        kind: SectionKind::Data(vec![])
+                    },
+                    Section {
+                        pos: 7,
+                        kind: SectionKind::Text(vec![])
+                    },
+                    Section {
+                        pos: 13,
+                        kind: SectionKind::Text(vec![])
+                    },
+                    Section {
+                        pos: 19,
+                        kind: SectionKind::Data(vec![])
+                    },
+                    Section {
+                        pos: 25,
+                        kind: SectionKind::Data(vec![])
+                    },
+                ],
+                eof_pos: 43
+            }
+        );
+        parse_err_test!(
+            ".asdf",
+            ParseError {
+                pos: 0,
+                kind: ParseErrorKind::UnknownDirective("asdf")
+            }
+        );
+        parse_err_test!(
+            "..",
+            ParseError {
+                pos: 1,
+                kind: ParseErrorKind::UnexpectedToken(TokenKind::Dot)
+            }
+        );
+        parse_err_test!(
+            ".data .data",
+            ParseError {
+                pos: 6,
+                kind: ParseErrorKind::UnexpectedToken(TokenKind::Dot)
+            }
+        );
+    }
+
+    #[test]
+    fn unexpected_main() {
+        for (s, tk) in token_kind_tuples![",", ":", "(", ")", "$", "0", "a", "'a'", "\"a\""] {
+            parse_err_test!(
+                s,
+                ParseError {
+                    pos: 0,
+                    kind: ParseErrorKind::UnexpectedToken(tk)
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn data() {
+        parse_data_test!(
+            r#"
+foo: .word 0
+bar: .word 0 : 12
+baz: .word "asdf"
+__foo: .hword 3
+bar123: .hword 7 : 27
+baz_foo: .hword ""
+foo: .half -7
+bar: .half -8 : 37
+baz: .half "asdf\"asdf"
+__foo: .byte 0x9f4e8a5
+bar123: .byte 0b1101101 : -31
+baz_foo: .byte "\\"
+foo: .ascii 0o1673
+bar: .ascii -0o1673 : 0x615
+baz: .ascii "a string\n"
+__foo: .asciiz -615456
+bar123: .asciiz 0:-3
+baz_foo: .asciiz "a\tstring"
+baz_foo: .word 0"#,
+            Data {
+                pos: 7,
+                label: "foo",
+                decl: DataDeclaration {
+                    pos: 12,
+                    kind: DataKind::Word,
+                    value_pos: 18,
+                    value: DataValue::Int(NumLiteral {
+                        negative: false,
+                        radix: 10,
+                        body: "0",
+                    }),
+                },
+            },
+            Data {
+                pos: 20,
+                label: "bar",
+                decl: DataDeclaration {
+                    pos: 25,
+                    kind: DataKind::Word,
+                    value_pos: 31,
+                    value: DataValue::Array {
+                        value: NumLiteral {
+                            negative: false,
+                            radix: 10,
+                            body: "0",
+                        },
+                        size_pos: 35,
+                        size: NumLiteral {
+                            negative: false,
+                            radix: 10,
+                            body: "12",
+                        },
+                    },
+                },
+            },
+            Data {
+                pos: 38,
+                label: "baz",
+                decl: DataDeclaration {
+                    pos: 43,
+                    kind: DataKind::Word,
+                    value_pos: 49,
+                    value: DataValue::String("asdf",),
+                },
+            },
+            Data {
+                pos: 56,
+                label: "__foo",
+                decl: DataDeclaration {
+                    pos: 63,
+                    kind: DataKind::HalfWord,
+                    value_pos: 70,
+                    value: DataValue::Int(NumLiteral {
+                        negative: false,
+                        radix: 10,
+                        body: "3",
+                    }),
+                },
+            },
+            Data {
+                pos: 72,
+                label: "bar123",
+                decl: DataDeclaration {
+                    pos: 80,
+                    kind: DataKind::HalfWord,
+                    value_pos: 87,
+                    value: DataValue::Array {
+                        value: NumLiteral {
+                            negative: false,
+                            radix: 10,
+                            body: "7",
+                        },
+                        size_pos: 91,
+                        size: NumLiteral {
+                            negative: false,
+                            radix: 10,
+                            body: "27",
+                        },
+                    },
+                },
+            },
+            Data {
+                pos: 94,
+                label: "baz_foo",
+                decl: DataDeclaration {
+                    pos: 103,
+                    kind: DataKind::HalfWord,
+                    value_pos: 110,
+                    value: DataValue::String("",),
+                },
+            },
+            Data {
+                pos: 113,
+                label: "foo",
+                decl: DataDeclaration {
+                    pos: 118,
+                    kind: DataKind::HalfWord,
+                    value_pos: 124,
+                    value: DataValue::Int(NumLiteral {
+                        negative: true,
+                        radix: 10,
+                        body: "7",
+                    }),
+                },
+            },
+            Data {
+                pos: 127,
+                label: "bar",
+                decl: DataDeclaration {
+                    pos: 132,
+                    kind: DataKind::HalfWord,
+                    value_pos: 138,
+                    value: DataValue::Array {
+                        value: NumLiteral {
+                            negative: true,
+                            radix: 10,
+                            body: "8",
+                        },
+                        size_pos: 143,
+                        size: NumLiteral {
+                            negative: false,
+                            radix: 10,
+                            body: "37",
+                        },
+                    },
+                },
+            },
+            Data {
+                pos: 146,
+                label: "baz",
+                decl: DataDeclaration {
+                    pos: 151,
+                    kind: DataKind::HalfWord,
+                    value_pos: 157,
+                    value: DataValue::String("asdf\\\"asdf",),
+                },
+            },
+            Data {
+                pos: 170,
+                label: "__foo",
+                decl: DataDeclaration {
+                    pos: 177,
+                    kind: DataKind::Byte,
+                    value_pos: 183,
+                    value: DataValue::Int(NumLiteral {
+                        negative: false,
+                        radix: 16,
+                        body: "9f4e8a5",
+                    }),
+                },
+            },
+            Data {
+                pos: 193,
+                label: "bar123",
+                decl: DataDeclaration {
+                    pos: 201,
+                    kind: DataKind::Byte,
+                    value_pos: 207,
+                    value: DataValue::Array {
+                        value: NumLiteral {
+                            negative: false,
+                            radix: 2,
+                            body: "1101101",
+                        },
+                        size_pos: 219,
+                        size: NumLiteral {
+                            negative: true,
+                            radix: 10,
+                            body: "31",
+                        },
+                    },
+                },
+            },
+            Data {
+                pos: 223,
+                label: "baz_foo",
+                decl: DataDeclaration {
+                    pos: 232,
+                    kind: DataKind::Byte,
+                    value_pos: 238,
+                    value: DataValue::String("\\\\",),
+                },
+            },
+            Data {
+                pos: 243,
+                label: "foo",
+                decl: DataDeclaration {
+                    pos: 248,
+                    kind: DataKind::Ascii,
+                    value_pos: 255,
+                    value: DataValue::Int(NumLiteral {
+                        negative: false,
+                        radix: 8,
+                        body: "1673",
+                    }),
+                },
+            },
+            Data {
+                pos: 262,
+                label: "bar",
+                decl: DataDeclaration {
+                    pos: 267,
+                    kind: DataKind::Ascii,
+                    value_pos: 274,
+                    value: DataValue::Array {
+                        value: NumLiteral {
+                            negative: true,
+                            radix: 8,
+                            body: "1673",
+                        },
+                        size_pos: 284,
+                        size: NumLiteral {
+                            negative: false,
+                            radix: 16,
+                            body: "615",
+                        },
+                    },
+                },
+            },
+            Data {
+                pos: 290,
+                label: "baz",
+                decl: DataDeclaration {
+                    pos: 295,
+                    kind: DataKind::Ascii,
+                    value_pos: 302,
+                    value: DataValue::String("a string\\n",),
+                },
+            },
+            Data {
+                pos: 315,
+                label: "__foo",
+                decl: DataDeclaration {
+                    pos: 322,
+                    kind: DataKind::Asciiz,
+                    value_pos: 330,
+                    value: DataValue::Int(NumLiteral {
+                        negative: true,
+                        radix: 10,
+                        body: "615456",
+                    }),
+                },
+            },
+            Data {
+                pos: 338,
+                label: "bar123",
+                decl: DataDeclaration {
+                    pos: 346,
+                    kind: DataKind::Asciiz,
+                    value_pos: 354,
+                    value: DataValue::Array {
+                        value: NumLiteral {
+                            negative: false,
+                            radix: 10,
+                            body: "0",
+                        },
+                        size_pos: 356,
+                        size: NumLiteral {
+                            negative: true,
+                            radix: 10,
+                            body: "3",
+                        },
+                    },
+                },
+            },
+            Data {
+                pos: 359,
+                label: "baz_foo",
+                decl: DataDeclaration {
+                    pos: 368,
+                    kind: DataKind::Asciiz,
+                    value_pos: 376,
+                    value: DataValue::String("a\\tstring",),
+                },
+            },
+            Data {
+                pos: 388,
+                label: "baz_foo",
+                decl: DataDeclaration {
+                    pos: 397,
+                    kind: DataKind::Word,
+                    value_pos: 403,
+                    value: DataValue::Int(NumLiteral {
+                        negative: false,
+                        radix: 10,
+                        body: "0",
+                    },),
+                },
+            }
+        );
+        parse_data_err_test!(
+            "asdf: .asdfword 6",
+            ParseError {
+                pos: 13,
+                kind: ParseErrorKind::UnknownDataKind("asdfword")
+            }
+        );
+    }
+
+    #[test]
+    fn unexpected_data() {
+        for (s, tk) in token_kind_tuples![".", ",", ":", "(", ")", "$", "\n"] {
+            parse_data_err_test!(
+                &("a: .word ".to_owned() + s),
+                ParseError {
+                    pos: 15,
+                    kind: ParseErrorKind::UnexpectedToken(tk)
+                }
+            );
+        }
+        for (s, tk) in token_kind_tuples![".", ",", "(", ")", "$", "a", "'a'"] {
+            parse_data_err_test!(
+                &("a: .word 0".to_owned() + s),
+                ParseError {
+                    pos: 16,
+                    kind: ParseErrorKind::UnexpectedToken(tk)
+                }
+            );
+        }
+        for (s, tk) in token_kind_tuples![".", ",", ":", "(", ")", "$", "\n", "a", "'a'", "\"a\""] {
+            parse_data_err_test!(
+                &("a: .word 0:".to_owned() + s),
+                ParseError {
+                    pos: 17,
+                    kind: ParseErrorKind::UnexpectedToken(tk)
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn text() {
+        parse_text_test!(
+            r#"
+asdf: asdf $t0, 0, 0($t2), asdf
+syscall
+asdf 0"#,
+            Entry {
+                pos: 7,
+                kind: EntryKind::Label("asdf"),
+            },
+            Entry {
+                pos: 13,
+                kind: EntryKind::Instruction(Instruction {
+                    name: "asdf",
+                    args: vec![
+                        Argument {
+                            pos: 18,
+                            kind: ArgumentKind::Register("t0"),
+                        },
+                        Argument {
+                            pos: 23,
+                            kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                                negative: false,
+                                radix: 10,
+                                body: "0",
+                            })),
+                        },
+                        Argument {
+                            pos: 26,
+                            kind: ArgumentKind::OffsetRegister {
+                                offset: NumLiteral {
+                                    negative: false,
+                                    radix: 10,
+                                    body: "0",
+                                },
+                                register_pos: 28,
+                                register: "t2",
+                            },
+                        },
+                        Argument {
+                            pos: 34,
+                            kind: ArgumentKind::Label("asdf",),
+                        },
+                    ],
+                    end_pos: 38,
+                }),
+            },
+            Entry {
+                pos: 39,
+                kind: EntryKind::Instruction(Instruction {
+                    name: "syscall",
+                    args: vec![],
+                    end_pos: 46,
+                },),
+            },
+            Entry {
+                pos: 47,
+                kind: EntryKind::Instruction(Instruction {
+                    name: "asdf",
+                    args: vec![Argument {
+                        pos: 52,
+                        kind: ArgumentKind::Literal(Literal::Num(NumLiteral {
+                            negative: false,
+                            radix: 10,
+                            body: "0",
+                        })),
+                    }],
+                    end_pos: 53,
+                }),
+            },
+        );
+        parse_text_test!(
+            "syscall",
+            Entry {
+                pos: 6,
+                kind: EntryKind::Instruction(Instruction {
+                    name: "syscall",
+                    args: vec![],
+                    end_pos: 13
+                })
+            }
+        );
+        parse_text_err_test!(
+            "asdf $t0,",
+            ParseError {
+                pos: 15,
+                kind: ParseErrorKind::UnexpectedEOF
+            }
+        );
+        parse_text_err_test!(
+            "asdf $t0,\n",
+            ParseError {
+                pos: 15,
+                kind: ParseErrorKind::UnexpectedToken(TokenKind::Newline)
+            }
+        );
+    }
+
+    #[test]
+    fn unexpected_argument() {
+        for (s, tk) in token_kind_tuples![".", ",", ":", "(", ")", "'a'", "\"a\""] {
+            parse_text_err_test!(
+                &("a ".to_owned() + s),
+                ParseError {
+                    pos: 8,
+                    kind: ParseErrorKind::UnexpectedToken(tk)
+                }
+            );
+        }
+        for (s, tk) in token_kind_tuples![".", ":", "(", ")", "'a'", "\"a\""] {
+            parse_text_err_test!(
+                &("a a ".to_owned() + s),
+                ParseError {
+                    pos: 10,
+                    kind: ParseErrorKind::UnexpectedToken(tk)
+                }
+            );
+        }
+    }
 
     #[test]
     fn basic() {
@@ -753,7 +1339,7 @@ mod tests {
                             Data {
                                 pos: 144,
                                 label: "fibs",
-                                value: DataDeclaration {
+                                decl: DataDeclaration {
                                     pos: 150,
                                     kind: DataKind::Word,
                                     value_pos: 158,
@@ -775,7 +1361,7 @@ mod tests {
                             Data {
                                 pos: 216,
                                 label: "size",
-                                value: DataDeclaration {
+                                decl: DataDeclaration {
                                     pos: 222,
                                     kind: DataKind::Word,
                                     value_pos: 229,
@@ -1199,7 +1785,7 @@ mod tests {
                             Data {
                                 pos: 1420,
                                 label: "space",
-                                value: DataDeclaration {
+                                decl: DataDeclaration {
                                     pos: 1426,
                                     kind: DataKind::Asciiz,
                                     value_pos: 1435,
@@ -1209,7 +1795,7 @@ mod tests {
                             Data {
                                 pos: 1482,
                                 label: "head",
-                                value: DataDeclaration {
+                                decl: DataDeclaration {
                                     pos: 1488,
                                     kind: DataKind::Asciiz,
                                     value_pos: 1497,

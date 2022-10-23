@@ -10,6 +10,7 @@ pub struct Token<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(Clone, Copy))]
 pub enum TokenKind<'a> {
     Dot,
     Comma,
