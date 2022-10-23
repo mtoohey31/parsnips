@@ -233,8 +233,10 @@ pub enum DataKind {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum DataValue<'a> {
+    Num(NumLiteral<'a>),
+    Char(char),
     String(&'a str),
-    Int(NumLiteral<'a>),
+    Ident(&'a str),
     Array {
         value: NumLiteral<'a>,
         size_pos: usize,
@@ -436,7 +438,6 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                 kind,
                                 value_pos: tn.pos,
                                 value: match tn.kind {
-                                    TokenKind::Ident(_) => todo!(),
                                     TokenKind::Literal(Literal::Num(value)) => {
                                         skip_whitespace!(ti, tn.pos);
                                         match ti.next() {
@@ -464,7 +465,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                                         }
                                                     }
                                                 }
-                                                TokenKind::Newline => DataValue::Int(value),
+                                                TokenKind::Newline => DataValue::Num(value),
                                                 TokenKind::Dot
                                                 | TokenKind::Comma
                                                 | TokenKind::OpenParen
@@ -476,11 +477,12 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                                 }
                                                 TokenKind::Whitespace => impossible_whitespace!(),
                                             },
-                                            None => DataValue::Int(value),
+                                            None => DataValue::Num(value),
                                         }
                                     }
-                                    TokenKind::Literal(Literal::Char(_)) => todo!(),
+                                    TokenKind::Literal(Literal::Char(c)) => DataValue::Char(c),
                                     TokenKind::Literal(Literal::Str(s)) => DataValue::String(s),
+                                    TokenKind::Ident(s) => DataValue::Ident(s),
                                     TokenKind::Dot
                                     | TokenKind::Comma
                                     | TokenKind::Colon
@@ -782,22 +784,23 @@ mod tests {
 foo: .word 0
 bar: .word 0 : 12
 baz: .word "asdf"
-__foo: .hword 3
-bar123: .hword 7 : 27
-baz_foo: .hword ""
-foo: .half -7
-bar: .half -8 : 37
-baz: .half "asdf\"asdf"
-__foo: .byte 0x9f4e8a5
-bar123: .byte 0b1101101 : -31
-baz_foo: .byte "\\"
-foo: .ascii 0o1673
-bar: .ascii -0o1673 : 0x615
-baz: .ascii "a string\n"
-__foo: .asciiz -615456
-bar123: .asciiz 0:-3
-baz_foo: .asciiz "a\tstring"
-baz_foo: .word 0"#,
+__foo: .word foo
+bar123: .hword 3
+baz_foo: .hword 7 : 27
+foo: .hword ""
+bar: .half -7
+baz: .half -8 : 37
+__foo: .half "asdf\"asdf"
+bar123: .byte 0x9f4e8a5
+baz_foo: .byte 0b1101101 : -31
+foo: .byte "\\"
+bar: .byte 'a'
+baz: .ascii 0o1673
+__foo: .ascii -0o1673 : 0x615
+bar123: .ascii "a string\n"
+baz_foo: .asciiz -615456
+foo: .asciiz "a\tstring"
+bar: .word 0"#,
             Data {
                 pos: 7,
                 label: "foo",
@@ -805,7 +808,7 @@ baz_foo: .word 0"#,
                     pos: 12,
                     kind: DataKind::Word,
                     value_pos: 18,
-                    value: DataValue::Int(NumLiteral {
+                    value: DataValue::Num(NumLiteral {
                         negative: false,
                         radix: 10,
                         body: "0",
@@ -849,29 +852,39 @@ baz_foo: .word 0"#,
                 label: "__foo",
                 decl: DataDeclaration {
                     pos: 63,
-                    kind: DataKind::HalfWord,
-                    value_pos: 70,
-                    value: DataValue::Int(NumLiteral {
-                        negative: false,
-                        radix: 10,
-                        body: "3",
-                    }),
+                    kind: DataKind::Word,
+                    value_pos: 69,
+                    value: DataValue::Ident("foo",),
                 },
             },
             Data {
-                pos: 72,
+                pos: 73,
                 label: "bar123",
                 decl: DataDeclaration {
-                    pos: 80,
+                    pos: 81,
                     kind: DataKind::HalfWord,
-                    value_pos: 87,
+                    value_pos: 88,
+                    value: DataValue::Num(NumLiteral {
+                        negative: false,
+                        radix: 10,
+                        body: "3",
+                    },),
+                },
+            },
+            Data {
+                pos: 90,
+                label: "baz_foo",
+                decl: DataDeclaration {
+                    pos: 99,
+                    kind: DataKind::HalfWord,
+                    value_pos: 106,
                     value: DataValue::Array {
                         value: NumLiteral {
                             negative: false,
                             radix: 10,
                             body: "7",
                         },
-                        size_pos: 91,
+                        size_pos: 110,
                         size: NumLiteral {
                             negative: false,
                             radix: 10,
@@ -881,43 +894,43 @@ baz_foo: .word 0"#,
                 },
             },
             Data {
-                pos: 94,
-                label: "baz_foo",
-                decl: DataDeclaration {
-                    pos: 103,
-                    kind: DataKind::HalfWord,
-                    value_pos: 110,
-                    value: DataValue::String("",),
-                },
-            },
-            Data {
                 pos: 113,
                 label: "foo",
                 decl: DataDeclaration {
                     pos: 118,
                     kind: DataKind::HalfWord,
-                    value_pos: 124,
-                    value: DataValue::Int(NumLiteral {
-                        negative: true,
-                        radix: 10,
-                        body: "7",
-                    }),
+                    value_pos: 125,
+                    value: DataValue::String("",),
                 },
             },
             Data {
-                pos: 127,
+                pos: 128,
                 label: "bar",
                 decl: DataDeclaration {
-                    pos: 132,
+                    pos: 133,
                     kind: DataKind::HalfWord,
-                    value_pos: 138,
+                    value_pos: 139,
+                    value: DataValue::Num(NumLiteral {
+                        negative: true,
+                        radix: 10,
+                        body: "7",
+                    },),
+                },
+            },
+            Data {
+                pos: 142,
+                label: "baz",
+                decl: DataDeclaration {
+                    pos: 147,
+                    kind: DataKind::HalfWord,
+                    value_pos: 153,
                     value: DataValue::Array {
                         value: NumLiteral {
                             negative: true,
                             radix: 10,
                             body: "8",
                         },
-                        size_pos: 143,
+                        size_pos: 158,
                         size: NumLiteral {
                             negative: false,
                             radix: 10,
@@ -927,43 +940,43 @@ baz_foo: .word 0"#,
                 },
             },
             Data {
-                pos: 146,
-                label: "baz",
+                pos: 161,
+                label: "__foo",
                 decl: DataDeclaration {
-                    pos: 151,
+                    pos: 168,
                     kind: DataKind::HalfWord,
-                    value_pos: 157,
+                    value_pos: 174,
                     value: DataValue::String("asdf\\\"asdf",),
                 },
             },
             Data {
-                pos: 170,
-                label: "__foo",
+                pos: 187,
+                label: "bar123",
                 decl: DataDeclaration {
-                    pos: 177,
+                    pos: 195,
                     kind: DataKind::Byte,
-                    value_pos: 183,
-                    value: DataValue::Int(NumLiteral {
+                    value_pos: 201,
+                    value: DataValue::Num(NumLiteral {
                         negative: false,
                         radix: 16,
                         body: "9f4e8a5",
-                    }),
+                    },),
                 },
             },
             Data {
-                pos: 193,
-                label: "bar123",
+                pos: 211,
+                label: "baz_foo",
                 decl: DataDeclaration {
-                    pos: 201,
+                    pos: 220,
                     kind: DataKind::Byte,
-                    value_pos: 207,
+                    value_pos: 226,
                     value: DataValue::Array {
                         value: NumLiteral {
                             negative: false,
                             radix: 2,
                             body: "1101101",
                         },
-                        size_pos: 219,
+                        size_pos: 238,
                         size: NumLiteral {
                             negative: true,
                             radix: 10,
@@ -973,43 +986,53 @@ baz_foo: .word 0"#,
                 },
             },
             Data {
-                pos: 223,
-                label: "baz_foo",
+                pos: 242,
+                label: "foo",
                 decl: DataDeclaration {
-                    pos: 232,
+                    pos: 247,
                     kind: DataKind::Byte,
-                    value_pos: 238,
+                    value_pos: 253,
                     value: DataValue::String("\\\\",),
                 },
             },
             Data {
-                pos: 243,
-                label: "foo",
+                pos: 258,
+                label: "bar",
                 decl: DataDeclaration {
-                    pos: 248,
-                    kind: DataKind::Ascii,
-                    value_pos: 255,
-                    value: DataValue::Int(NumLiteral {
-                        negative: false,
-                        radix: 8,
-                        body: "1673",
-                    }),
+                    pos: 263,
+                    kind: DataKind::Byte,
+                    value_pos: 269,
+                    value: DataValue::Char('a',),
                 },
             },
             Data {
-                pos: 262,
-                label: "bar",
+                pos: 273,
+                label: "baz",
                 decl: DataDeclaration {
-                    pos: 267,
+                    pos: 278,
                     kind: DataKind::Ascii,
-                    value_pos: 274,
+                    value_pos: 285,
+                    value: DataValue::Num(NumLiteral {
+                        negative: false,
+                        radix: 8,
+                        body: "1673",
+                    },),
+                },
+            },
+            Data {
+                pos: 292,
+                label: "__foo",
+                decl: DataDeclaration {
+                    pos: 299,
+                    kind: DataKind::Ascii,
+                    value_pos: 306,
                     value: DataValue::Array {
                         value: NumLiteral {
                             negative: true,
                             radix: 8,
                             body: "1673",
                         },
-                        size_pos: 284,
+                        size_pos: 316,
                         size: NumLiteral {
                             negative: false,
                             radix: 16,
@@ -1019,75 +1042,53 @@ baz_foo: .word 0"#,
                 },
             },
             Data {
-                pos: 290,
-                label: "baz",
+                pos: 322,
+                label: "bar123",
                 decl: DataDeclaration {
-                    pos: 295,
+                    pos: 330,
                     kind: DataKind::Ascii,
-                    value_pos: 302,
+                    value_pos: 337,
                     value: DataValue::String("a string\\n",),
                 },
             },
             Data {
-                pos: 315,
-                label: "__foo",
+                pos: 350,
+                label: "baz_foo",
                 decl: DataDeclaration {
-                    pos: 322,
+                    pos: 359,
                     kind: DataKind::Asciiz,
-                    value_pos: 330,
-                    value: DataValue::Int(NumLiteral {
+                    value_pos: 367,
+                    value: DataValue::Num(NumLiteral {
                         negative: true,
                         radix: 10,
                         body: "615456",
-                    }),
+                    },),
                 },
             },
             Data {
-                pos: 338,
-                label: "bar123",
+                pos: 375,
+                label: "foo",
                 decl: DataDeclaration {
-                    pos: 346,
+                    pos: 380,
                     kind: DataKind::Asciiz,
-                    value_pos: 354,
-                    value: DataValue::Array {
-                        value: NumLiteral {
-                            negative: false,
-                            radix: 10,
-                            body: "0",
-                        },
-                        size_pos: 356,
-                        size: NumLiteral {
-                            negative: true,
-                            radix: 10,
-                            body: "3",
-                        },
-                    },
-                },
-            },
-            Data {
-                pos: 359,
-                label: "baz_foo",
-                decl: DataDeclaration {
-                    pos: 368,
-                    kind: DataKind::Asciiz,
-                    value_pos: 376,
+                    value_pos: 388,
                     value: DataValue::String("a\\tstring",),
                 },
             },
             Data {
-                pos: 388,
-                label: "baz_foo",
+                pos: 400,
+                label: "bar",
                 decl: DataDeclaration {
-                    pos: 397,
+                    pos: 405,
                     kind: DataKind::Word,
-                    value_pos: 403,
-                    value: DataValue::Int(NumLiteral {
+                    value_pos: 411,
+                    value: DataValue::Num(NumLiteral {
                         negative: false,
                         radix: 10,
                         body: "0",
                     },),
                 },
-            }
+            },
         );
         parse_data_err_test!(
             "asdf: .asdfword 6",
@@ -1250,6 +1251,110 @@ asdf 0"#,
         }
     }
 
+    macro_rules! parse_non_neg_tests {
+        ($t:ident) => {
+            assert_eq!(
+                $t::parse_non_neg(NumLiteral {
+                    negative: false,
+                    radix: 10,
+                    body: "9"
+                })
+                .unwrap(),
+                9
+            );
+            assert_eq!(
+                $t::parse_non_neg(NumLiteral {
+                    negative: true,
+                    radix: 10,
+                    body: "9"
+                })
+                .unwrap_err(),
+                IntErrorKind::NegOverflow
+            );
+            assert_eq!(
+                $t::parse_non_neg(NumLiteral {
+                    negative: false,
+                    radix: 2,
+                    body: "010010110"
+                })
+                .unwrap(),
+                150
+            );
+            assert_eq!(
+                $t::parse_non_neg(NumLiteral {
+                    negative: false,
+                    radix: 36,
+                    body: "10000000000000000000000000000000000000000000000000000"
+                })
+                .unwrap_err(),
+                IntErrorKind::PosOverflow
+            );
+        };
+    }
+
+    #[test]
+    fn parse_non_neg() {
+        parse_non_neg_tests!(u8);
+        parse_non_neg_tests!(usize);
+    }
+
+    macro_rules! parse_maybe_neg_tests {
+        ($t:ident, $ts:ident) => {
+            assert_eq!(
+                $t::parse_maybe_neg(NumLiteral {
+                    negative: false,
+                    radix: 10,
+                    body: "9"
+                })
+                .unwrap(),
+                9
+            );
+            assert_eq!(
+                $t::parse_maybe_neg(NumLiteral {
+                    negative: true,
+                    radix: 10,
+                    body: "9"
+                })
+                .unwrap(),
+                -9 as $ts as $t
+            );
+            assert_eq!(
+                $t::parse_maybe_neg(NumLiteral {
+                    negative: false,
+                    radix: 2,
+                    body: "010010110"
+                })
+                .unwrap(),
+                150
+            );
+            assert_eq!(
+                $t::parse_maybe_neg(NumLiteral {
+                    negative: false,
+                    radix: 36,
+                    body: "10000000000000000000000000000000000000000000000000000"
+                })
+                .unwrap_err(),
+                IntErrorKind::PosOverflow
+            );
+            assert_eq!(
+                $t::parse_maybe_neg(NumLiteral {
+                    negative: true,
+                    radix: 36,
+                    body: "10000000000000000000000000000000000000000000000000000"
+                })
+                .unwrap_err(),
+                IntErrorKind::NegOverflow
+            );
+        };
+    }
+
+    #[test]
+    fn parse_maybe_neg() {
+        parse_maybe_neg_tests!(u8, i8);
+        parse_maybe_neg_tests!(u16, i16);
+        parse_maybe_neg_tests!(u32, i32);
+    }
+
     #[test]
     fn basic() {
         assert_eq!(
@@ -1374,7 +1479,7 @@ asdf 0"#,
                                     pos: 222,
                                     kind: DataKind::Word,
                                     value_pos: 229,
-                                    value: DataValue::Int(NumLiteral {
+                                    value: DataValue::Num(NumLiteral {
                                         negative: false,
                                         radix: 10,
                                         body: "12"

@@ -115,6 +115,7 @@ pub enum AssembleErrorKind<'a> {
     NoText,
     InvalidStrEscape(char),
     IllegalDataKindValueCombination(DataKind, DataValue<'a>),
+    NonAsciiChar(char),
     NonAsciiStr(AsAsciiStrError),
     OverflowingShamt(NumLiteral<'a>),
     OverflowingLabelReference(u32),
@@ -300,6 +301,8 @@ enum ReferenceKind {
     Imm,
     // |= addr asserting bitwidth is <= 16
     RawImm,
+    // |= addr
+    Raw,
 }
 
 pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
@@ -321,47 +324,73 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
 
                 for entry in entries {
                     label_definitions.insert(entry.label, program.len());
-                    match entry.value.kind {
-                        DataKind::Word => match entry.value.value {
-                            DataValue::Int(value) => {
-                                push_int!(program, u32, entry.value.pos, value);
+                    match entry.decl.kind {
+                        DataKind::Word => match entry.decl.value {
+                            DataValue::Num(value) => {
+                                push_int!(program, u32, entry.decl.pos, value);
                             }
                             DataValue::Array {
                                 value,
                                 size_pos,
                                 size,
                             } => {
-                                push_array!(program, u32, entry.value.pos, value, size_pos, size);
+                                push_array!(program, u32, entry.decl.pos, value, size_pos, size);
                             }
-                            DataValue::String(_) => return Err(AssembleError::from(entry.value)),
+                            DataValue::Ident(ident) => {
+                                label_references.push(LabelReference {
+                                    ident,
+                                    location: program.len(),
+                                    pos: entry.decl.value_pos,
+                                    kind: ReferenceKind::Raw,
+                                });
+                                pad(&mut program, 4);
+                            }
+                            DataValue::Char(_) | DataValue::String(_) => {
+                                return Err(AssembleError::from(entry.decl))
+                            }
                         },
-                        DataKind::HalfWord => match entry.value.value {
-                            DataValue::Int(value) => {
-                                push_int!(program, u16, entry.value.pos, value);
+                        DataKind::HalfWord => match entry.decl.value {
+                            DataValue::Num(value) => {
+                                push_int!(program, u16, entry.decl.pos, value);
                             }
                             DataValue::Array {
                                 value,
                                 size_pos,
                                 size,
                             } => {
-                                push_array!(program, u16, entry.value.pos, value, size_pos, size);
+                                push_array!(program, u16, entry.decl.pos, value, size_pos, size);
                             }
-                            DataValue::String(_) => return Err(AssembleError::from(entry.value)),
+                            DataValue::Char(_) | DataValue::String(_) | DataValue::Ident(_) => {
+                                return Err(AssembleError::from(entry.decl))
+                            }
                         },
-                        DataKind::Byte => match entry.value.value {
-                            DataValue::Int(value) => {
-                                push_int!(program, u8, entry.value.pos, value);
+                        DataKind::Byte => match entry.decl.value {
+                            DataValue::Num(value) => {
+                                push_int!(program, u8, entry.decl.pos, value);
                             }
                             DataValue::Array {
                                 value,
                                 size_pos,
                                 size,
                             } => {
-                                push_array!(program, u8, entry.value.pos, value, size_pos, size);
+                                push_array!(program, u8, entry.decl.pos, value, size_pos, size);
                             }
-                            DataValue::String(_) => return Err(AssembleError::from(entry.value)),
+                            DataValue::Char(c) => {
+                                if !c.is_ascii() {
+                                    return Err(AssembleError {
+                                        pos: entry.decl.value_pos,
+                                        kind: AssembleErrorKind::NonAsciiChar(c),
+                                    });
+                                }
+                                program.reserve(4);
+                                program.push(c as u8);
+                                pad(&mut program, 3);
+                            }
+                            DataValue::String(_) | DataValue::Ident(_) => {
+                                return Err(AssembleError::from(entry.decl))
+                            }
                         },
-                        DataKind::Ascii => match entry.value.value {
+                        DataKind::Ascii => match entry.decl.value {
                             DataValue::String(s) => {
                                 let unescaped = unescape(s)?;
                                 let ascii_str =
@@ -375,11 +404,14 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                 program.extend_from_slice(bytes);
                                 pad(&mut program, pad_len);
                             }
-                            DataValue::Int(_) | DataValue::Array { .. } => {
-                                return Err(AssembleError::from(entry.value))
+                            DataValue::Num(_)
+                            | DataValue::Char(_)
+                            | DataValue::Ident(_)
+                            | DataValue::Array { .. } => {
+                                return Err(AssembleError::from(entry.decl))
                             }
                         },
-                        DataKind::Asciiz => match entry.value.value {
+                        DataKind::Asciiz => match entry.decl.value {
                             DataValue::String(s) => {
                                 let unescaped = unescape(s)?;
                                 let ascii_str =
@@ -394,8 +426,11 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                 program.extend_from_slice(bytes);
                                 pad(&mut program, pad_len + 1);
                             }
-                            DataValue::Int(_) | DataValue::Array { .. } => {
-                                return Err(AssembleError::from(entry.value))
+                            DataValue::Num(_)
+                            | DataValue::Char(_)
+                            | DataValue::Ident(_)
+                            | DataValue::Array { .. } => {
+                                return Err(AssembleError::from(entry.decl))
                             }
                         },
                     }
@@ -855,6 +890,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                     .map_err(|_| AssembleErrorKind::OverflowingLabelReference(full as u32))
                     .map(|s| s as u16 as u32)
             }
+            ReferenceKind::Raw => Ok(*definition as u32),
         }
         .map_err(|kind| AssembleError {
             pos: reference.pos,
