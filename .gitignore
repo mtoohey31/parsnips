@@ -1,5 +1,6 @@
 */target
 /target
+/target-cov
 /.direnv
 /result
 /cov

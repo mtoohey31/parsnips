@@ -9,11 +9,11 @@ all: check-fmt test build
 
 .PHONY: check-fmt
 check-fmt:
-	rustfmt --check $$(find . \( -name target -prune -false \) -o -name '*.rs')
+	rustfmt --check $$(find . \( \( -name target -o -name target-cov \) -prune -false \) -o -name '*.rs')
 
 .PHONY: fmt
 fmt:
-	rustfmt $$(find . \( -name target -prune -false \) -o -name '*.rs')
+	rustfmt $$(find . \( \( -name target -o -name target-cov \) -prune -false \) -o -name '*.rs')
 
 .PHONY: test
 test: test-parser test-asm test-emu test-web
@@ -58,24 +58,24 @@ parsnips-web/dist: parsnips-emu/pkg parsnips-web/node_modules parsnips-web/node_
 .PHONY: cov-parser
 cov-parser: $(PARSER_DEPS)
 	export LLVM_PROFILE_DIR="$$(mktemp -d)" && \
-		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test -p parsnips-parser && \
-		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \
+		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test --target-dir target-cov -p parsnips-parser --quiet && \
+		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target-cov/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \
 		rm -rf "$$LLVM_PROFILE_DIR"
 
 .PHONY: cov-asm
 cov-asm: $(ASM_DEPS) $(INST_DEPS) $(PARSER_DEPS)
 	export LLVM_PROFILE_DIR="$$(mktemp -d)" && \
-		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test -p parsnips-asm && \
-		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \
+		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test --target-dir target-cov -p parsnips-asm --quiet && \
+		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target-cov/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \
 		rm -rf "$$LLVM_PROFILE_DIR"
 
 .PHONY: cov-emu
 cov-emu: $(EMU_DEPS) $(INST_DEPS) $(PARSER_DEPS)
 	export LLVM_PROFILE_DIR="$$(mktemp -d)" && \
-		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test -p parsnips-emu && \
-		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \
+		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test  --target-dir target-cov -p parsnips-emu --quiet && \
+		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target-cov/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \
 		rm -rf "$$LLVM_PROFILE_DIR"
 
 .PHONY: clean
 clean:
-	rm -rf cov target parsnips-emu/pkg parsnips-web/{dist,node_modules}
+	rm -rf cov target target-cov parsnips-emu/pkg parsnips-web/{dist,node_modules}
