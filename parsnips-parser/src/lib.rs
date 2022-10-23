@@ -145,7 +145,10 @@ pub trait ParseMaybeNeg {
 impl ParseMaybeNeg for u8 {
     fn parse_maybe_neg(num_lit: NumLiteral) -> Result<Self, IntErrorKind> {
         Self::from_str_radix(num_lit.body, num_lit.radix)
-            .map_err(|err| err.kind().clone())
+            .map_err(|err| match err.kind() {
+                IntErrorKind::PosOverflow if num_lit.negative => IntErrorKind::NegOverflow,
+                _ => err.kind().clone(),
+            })
             .and_then(|raw| {
                 if num_lit.negative {
                     i8::try_from(raw)
@@ -164,7 +167,10 @@ impl ParseMaybeNeg for u16 {
         Self: Sized,
     {
         Self::from_str_radix(num_lit.body, num_lit.radix)
-            .map_err(|err| err.kind().clone())
+            .map_err(|err| match err.kind() {
+                IntErrorKind::PosOverflow if num_lit.negative => IntErrorKind::NegOverflow,
+                _ => err.kind().clone(),
+            })
             .and_then(|raw| {
                 if num_lit.negative {
                     i16::try_from(raw)
@@ -183,7 +189,10 @@ impl ParseMaybeNeg for u32 {
         Self: Sized,
     {
         Self::from_str_radix(num_lit.body, num_lit.radix)
-            .map_err(|err| err.kind().clone())
+            .map_err(|err| match err.kind() {
+                IntErrorKind::PosOverflow if num_lit.negative => IntErrorKind::NegOverflow,
+                _ => err.kind().clone(),
+            })
             .and_then(|raw| {
                 if num_lit.negative {
                     i32::try_from(raw)
