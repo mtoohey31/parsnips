@@ -280,7 +280,7 @@ impl Emulator {
             return Err(ERR_OOB![self.pc, memory.len() as u32 - 4]);
         }
         let inst = if self.pc % 4 == 0 {
-            util::Inst::from_le(memory.index_aligned(self.pc as usize))
+            util::Inst::from_le(unsafe { memory.index_aligned(self.pc as usize) })
         } else {
             return Err(ERR_MISALIGNED_PC![self.pc]);
         };
@@ -574,7 +574,8 @@ impl Emulator {
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
                 if addr % 2 == 0 {
                     self.regs[inst.rt()] =
-                        u16::from_le(memory.index_aligned(addr as usize)) as i16 as i32 as u32;
+                        u16::from_le(unsafe { memory.index_aligned(addr as usize) }) as i16 as i32
+                            as u32;
                 } else {
                     return Err(ERR_MISALIGNED_LH![addr]);
                 }
@@ -584,7 +585,8 @@ impl Emulator {
 
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
                 if addr % 2 == 0 {
-                    self.regs[inst.rt()] = u16::from_le(memory.index_aligned(addr as usize)) as u32;
+                    self.regs[inst.rt()] =
+                        u16::from_le(unsafe { memory.index_aligned(addr as usize) }) as u32;
                 } else {
                     return Err(ERR_MISALIGNED_LH![addr]);
                 }
@@ -594,7 +596,8 @@ impl Emulator {
 
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
                 if addr % 4 == 0 {
-                    self.regs[inst.rt()] = u32::from_le(memory.index_aligned(addr as usize));
+                    self.regs[inst.rt()] =
+                        u32::from_le(unsafe { memory.index_aligned(addr as usize) });
                 } else {
                     return Err(ERR_MISALIGNED_LW![addr]);
                 }
@@ -610,7 +613,7 @@ impl Emulator {
 
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
                 if addr % 2 == 0 {
-                    *memory.as_mut().index_aligned_mut(addr as usize) =
+                    *unsafe { memory.as_mut().index_aligned_mut(addr as usize) } =
                         ((self.regs[inst.rt()] & MASK16) as u16).to_le();
                 } else {
                     return Err(ERR_MISALIGNED_SH![addr]);
@@ -621,7 +624,8 @@ impl Emulator {
 
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
                 if addr % 4 == 0 {
-                    *memory.as_mut().index_aligned_mut(addr as usize) = self.regs[inst.rt()];
+                    *unsafe { memory.as_mut().index_aligned_mut(addr as usize) } =
+                        self.regs[inst.rt()];
                 } else {
                     return Err(ERR_MISALIGNED_SW![addr]);
                 }
@@ -1858,7 +1862,7 @@ mod tests {
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         emu.step(&mut prog).unwrap();
-        assert_eq!(prog.as_ref().index_aligned::<u16>(2), 9185);
+        assert_eq!(unsafe { prog.as_ref().index_aligned::<u16>(2) }, 9185);
     }
     #[test]
     #[wasm_bindgen_test]
@@ -1935,7 +1939,10 @@ mod tests {
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         emu.step(&mut prog).unwrap();
-        assert_eq!(prog.as_ref().index_aligned::<u32>(4), -9185_i32 as u32);
+        assert_eq!(
+            unsafe { prog.as_ref().index_aligned::<u32>(4) },
+            -9185_i32 as u32
+        );
     }
     #[test]
     #[wasm_bindgen_test]

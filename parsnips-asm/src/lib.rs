@@ -901,9 +901,11 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
             pos: reference.pos,
             kind,
         })?;
-        *program
-            .as_mut_slice()
-            .index_aligned_mut::<u32>(reference.location) |= imm.to_le();
+        *unsafe {
+            program
+                .as_mut_slice()
+                .index_aligned_mut::<u32>(reference.location)
+        } |= imm.to_le();
     }
 
     if Some(true) == initial_section_data {
@@ -918,7 +920,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                 kind: AssembleErrorKind::OverflowingLabelReference(imm),
             });
         }
-        *program.as_mut_slice().index_aligned_mut::<u32>(0) |= imm;
+        *unsafe { program.as_mut_slice().index_aligned_mut::<u32>(0) } |= imm;
     }
 
     Ok(program)
