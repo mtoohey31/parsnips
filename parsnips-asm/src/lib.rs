@@ -935,10 +935,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     fn str_to_u32(input: &str) -> u32 {
-        input
-            .chars()
-            .take(4)
-            .fold(0, |acc, c| (acc >> 8) + ((c as u32) << 24))
+        assert_eq!(input.len(), 4);
+        u32::from_le_bytes(input.as_ascii_str().unwrap().as_bytes().try_into().unwrap())
     }
 
     macro_rules! asm_test {
