@@ -1,7 +1,7 @@
 ASM_DEPS=parsnips-asm/Cargo.toml Cargo.lock parsnips-asm/src/**
 CLI_DEPS=parsnips-cli/Cargo.toml Cargo.lock parsnips-cli/src/**
 EMU_DEPS=parsnips-emu/Cargo.toml Cargo.lock parsnips-emu/src/**
-INST_DEPS=parsnips-inst/Cargo.toml Cargo.lock parsnips-inst/src/**
+UTIL_DEPS=parsnips-util/Cargo.toml Cargo.lock parsnips-util/src/**
 PARSER_DEPS=parsnips-parser/Cargo.toml Cargo.lock parsnips-parser/src/**
 
 .PHONY: all
@@ -38,10 +38,10 @@ test-web: parsnips-web/node_modules parsnips-web/node_modules/parsnips-emu
 .PHONY: build
 build: parsnips-web/dist target/release/par
 
-target/release/par: $(CLI_DEPS) $(EMU_DEPS) $(INST_DEPS) $(PARSER_DEPS)
+target/release/par: $(CLI_DEPS) $(EMU_DEPS) $(UTIL_DEPS) $(PARSER_DEPS)
 	cargo build -p parsnips-cli --release
 
-parsnips-emu/pkg: $(EMU_DEPS) $(INST_DEPS) $(PARSER_DEPS)
+parsnips-emu/pkg: $(EMU_DEPS) $(UTIL_DEPS) $(PARSER_DEPS)
 	cd parsnips-emu && wasm-pack build --target web --mode no-install
 	rm -rf parsnips-web/node_modules/parsnips-emu
 
@@ -63,14 +63,14 @@ cov-parser: $(PARSER_DEPS)
 		rm -rf "$$LLVM_PROFILE_DIR"
 
 .PHONY: cov-asm
-cov-asm: $(ASM_DEPS) $(INST_DEPS) $(PARSER_DEPS)
+cov-asm: $(ASM_DEPS) $(UTIL_DEPS) $(PARSER_DEPS)
 	export LLVM_PROFILE_DIR="$$(mktemp -d)" && \
 		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test --target-dir target-cov -p parsnips-asm --quiet && \
 		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target-cov/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \
 		rm -rf "$$LLVM_PROFILE_DIR"
 
 .PHONY: cov-emu
-cov-emu: $(EMU_DEPS) $(INST_DEPS) $(PARSER_DEPS)
+cov-emu: $(EMU_DEPS) $(UTIL_DEPS) $(PARSER_DEPS)
 	export LLVM_PROFILE_DIR="$$(mktemp -d)" && \
 		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test  --target-dir target-cov -p parsnips-emu --quiet && \
 		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target-cov/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \

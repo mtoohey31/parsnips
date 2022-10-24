@@ -1,10 +1,10 @@
 #![no_std]
 
-use parsnips_inst::{Funct, Inst, Op};
 use parsnips_parser::{
     ArgumentKind, Ast, DataDeclaration, DataKind, DataValue, EntryKind, Instruction, Literal,
     NumLiteral, ParseMaybeSigned, ParseSigned, ParseUnsigned, SectionKind,
 };
+use parsnips_util::{Funct, IndexAlignedMut, Inst, Op};
 
 extern crate alloc;
 use alloc::{string::String, vec::Vec};
@@ -901,9 +901,9 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
             pos: reference.pos,
             kind,
         })?;
-        // TODO: remove all align_to's because these aren't guaranteed to do what we want; they
-        // might have prefixes/suffixes
-        unsafe { program[reference.location..].align_to_mut::<u32>() }.1[0] |= imm.to_le();
+        *program
+            .as_mut_slice()
+            .index_aligned_mut::<u32>(reference.location) |= imm.to_le();
     }
 
     if Some(true) == initial_section_data {
@@ -918,7 +918,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                 kind: AssembleErrorKind::OverflowingLabelReference(imm),
             });
         }
-        unsafe { program.align_to_mut::<u32>() }.1[0] |= imm;
+        *program.as_mut_slice().index_aligned_mut::<u32>(0) |= imm;
     }
 
     Ok(program)

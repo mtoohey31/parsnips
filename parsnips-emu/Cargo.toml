@@ -13,8 +13,8 @@ license = "MIT OR Apache-2.0"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-# instruction interpretation
-parsnips-inst.path = "../parsnips-inst"
+# a variety of things
+parsnips-util.path = "../parsnips-util"
 
 # compiling to wasm
 wasm-bindgen = "0.2.80"
