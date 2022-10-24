@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(clippy::cast_possible_truncation)]
 
 mod lex;
 use core::num::IntErrorKind;
