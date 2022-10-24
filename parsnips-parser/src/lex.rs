@@ -63,7 +63,7 @@ macro_rules! failing_pos {
     }};
 }
 
-pub fn lex<'a>(input: &'a str) -> Result<Vec<Token<'a>>, LexError> {
+pub fn lex(input: &str) -> Result<Vec<Token>, LexError> {
     let mut ci = input.char_indices().peekable();
     let mut tokens = Vec::new();
     'OUTER: while let Some((pos, mut c)) = ci.next() {

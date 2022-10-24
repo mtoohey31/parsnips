@@ -439,12 +439,11 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                         expect!(ti, TokenKind::Dot, pos)?;
                         let (kind_str, pos) = expect_ident!(ti, pos + 1)?;
                         let dot_pos = pos - 1;
-                        let kind: DataKind = DataKind::try_from(kind_str).or_else(|_| {
-                            Err(ParseError {
+                        let kind: DataKind =
+                            DataKind::try_from(kind_str).map_err(|_| ParseError {
                                 pos,
                                 kind: ParseErrorKind::UnknownDataKind(kind_str),
-                            })
-                        })?;
+                            })?;
                         let pos = skip_at_least_one_whitespace!(ti, pos)?;
                         let tn = ti.next().ok_or(ParseError {
                             pos,

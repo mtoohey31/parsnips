@@ -17,7 +17,7 @@ pub fn assemble_bytes(path: PathBuf) -> Result<Vec<u8>, Box<dyn Error>> {
 
 pub fn assemble(path: PathBuf, out_path: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
     let bytes = assemble_bytes(path.clone())?;
-    let out_path = out_path.unwrap_or(path.with_extension(""));
+    let out_path = out_path.unwrap_or_else(|| path.with_extension(""));
     if out_path == path {
         Err(anyhow!("default output path would overwrite source"))?;
     }

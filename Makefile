@@ -5,7 +5,7 @@ UTIL_DEPS=parsnips-util/Cargo.toml Cargo.lock parsnips-util/src/**
 PARSER_DEPS=parsnips-parser/Cargo.toml Cargo.lock parsnips-parser/src/**
 
 .PHONY: all
-all: check-fmt test build
+all: check-fmt test check-clippy build
 
 .PHONY: check-fmt
 check-fmt:
@@ -14,6 +14,10 @@ check-fmt:
 .PHONY: fmt
 fmt:
 	rustfmt $$(find . \( \( -name target -o -name target-cov \) -prune -false \) -o -name '*.rs')
+
+.PHONY: check-clippy
+check-clippy:
+	cargo clippy
 
 .PHONY: test
 test: test-parser test-asm test-emu test-web

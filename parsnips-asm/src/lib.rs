@@ -690,7 +690,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                     }
 
                                     Op::SYSCALL => {
-                                        if arguments.len() > 0 {
+                                        if !arguments.is_empty() {
                                             let a = arguments.remove(0);
                                             return Err(AssembleError {
                                                 pos: a.pos,
@@ -872,7 +872,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
     for reference in label_references {
         let definition = label_definitions
             .get(reference.ident)
-            .ok_or_else(|| AssembleError {
+            .ok_or(AssembleError {
                 pos: reference.pos,
                 kind: AssembleErrorKind::UndefinedLabel(reference.ident),
             })?;
@@ -913,7 +913,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
             pos: ast.eof_pos,
             kind: AssembleErrorKind::NoText,
         })?;
-        let imm = location - 4 >> 2;
+        let imm = (location - 4) >> 2;
         if imm > (1 << 26) - 1 {
             return Err(AssembleError {
                 pos,

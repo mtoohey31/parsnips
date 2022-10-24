@@ -256,16 +256,22 @@ pub struct Emulator {
     pc: u32,
 }
 
+impl Default for Emulator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl Emulator {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new() -> Self {
-        return Self {
+        Self {
             regs: [0; 32],
             lo: 0,
             hi: 0,
             pc: 0,
-        };
+        }
     }
 
     pub fn get_reg(&self, reg: usize) -> u32 {
