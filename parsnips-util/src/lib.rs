@@ -4,6 +4,7 @@
 
 pub mod inst;
 use core::mem::size_of;
+pub mod test;
 
 pub use inst::{Funct, Inst, Op};
 
