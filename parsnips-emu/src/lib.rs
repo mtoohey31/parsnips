@@ -640,20 +640,8 @@ impl Emulator {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use util::le_byte_arr;
     use wasm_bindgen_test::wasm_bindgen_test;
-
-    macro_rules! le_byte_arr {
-        ($($x:expr),+$(,)?) => {
-            [
-            $(
-                ($x & MASK8) as u8,
-                (($x >> 8) & MASK8) as u8,
-                (($x >> 16) & MASK8) as u8,
-                (($x >> 24) & MASK8) as u8,
-            )*
-            ]
-        };
-    }
 
     #[test]
     #[wasm_bindgen_test]
