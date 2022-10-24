@@ -1,3 +1,5 @@
+use strum_macros::EnumString;
+
 pub const REG: u8 = 0b000000;
 pub const J: u8 = 0b000010;
 pub const JAL: u8 = 0b000011;
@@ -23,3 +25,34 @@ pub const LHU: u8 = 0b100101;
 pub const SB: u8 = 0b101000;
 pub const SH: u8 = 0b101001;
 pub const SW: u8 = 0b101011;
+
+#[derive(Debug, EnumString)]
+#[strum(serialize_all = "lowercase")]
+#[repr(u8)]
+pub enum Op {
+    REG = REG,
+    J = J,
+    JAL = JAL,
+    BEQ = BEQ,
+    BNE = BNE,
+    BLEZ = BLEZ,
+    BGTZ = BGTZ,
+    ADDI = ADDI,
+    ADDIU = ADDIU,
+    SLTI = SLTI,
+    SLTIU = SLTIU,
+    ANDI = ANDI,
+    ORI = ORI,
+    XORI = XORI,
+    LLO = LLO,
+    LHI = LHI,
+    SYSCALL = SYSCALL,
+    LB = LB,
+    LH = LH,
+    LW = LW,
+    LBU = LBU,
+    LHU = LHU,
+    SB = SB,
+    SH = SH,
+    SW = SW,
+}

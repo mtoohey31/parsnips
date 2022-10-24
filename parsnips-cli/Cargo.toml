@@ -16,6 +16,15 @@ name = "par"
 path = "src/main.rs"
 
 [dependencies]
+# assembling programs
+parsnips-asm.path = "../parsnips-asm"
+# emulating programs
 parsnips-emu.path = "../parsnips-emu"
+# parsing programs
+parsnips-parser.path = "../parsnips-parser"
 
+# parsing command-line arguments
 clap = { version = "3", features = ["derive"] }
+
+# error wrapping
+anyhow = "1.0"

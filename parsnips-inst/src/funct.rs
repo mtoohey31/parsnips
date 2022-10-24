@@ -1,3 +1,5 @@
+use strum_macros::EnumString;
+
 pub const SLL: u8 = 0b000000;
 pub const SRL: u8 = 0b000010;
 pub const SRA: u8 = 0b000011;
@@ -24,3 +26,35 @@ pub const XOR: u8 = 0b100110;
 pub const NOR: u8 = 0b100111;
 pub const SLT: u8 = 0b101010;
 pub const SLTU: u8 = 0b101001;
+
+#[derive(Debug, EnumString)]
+#[strum(serialize_all = "lowercase")]
+#[repr(u8)]
+pub enum Funct {
+    SLL = SLL,
+    SRL = SRL,
+    SRA = SRA,
+    SLLV = SLLV,
+    SRLV = SRLV,
+    SRAV = SRAV,
+    JR = JR,
+    JALR = JALR,
+    MFHI = MFHI,
+    MTHI = MTHI,
+    MFLO = MFLO,
+    MTLO = MTLO,
+    MULT = MULT,
+    MULTU = MULTU,
+    DIV = DIV,
+    DIVU = DIVU,
+    ADD = ADD,
+    ADDU = ADDU,
+    SUB = SUB,
+    SUBU = SUBU,
+    AND = AND,
+    OR = OR,
+    XOR = XOR,
+    NOR = NOR,
+    SLT = SLT,
+    SLTU = SLTU,
+}

@@ -13,13 +13,17 @@ license = "MIT OR Apache-2.0"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-# needed for ast types of input programs to be emulated
-parsnips-parser.path = "../parsnips-parser"
-# needed for compiling to wasm
+# instruction interpretation
+parsnips-inst.path = "../parsnips-inst"
+
+# compiling to wasm
 wasm-bindgen = "0.2.80"
-# needed for syscall handler type definitions when targetting wasm32
+# syscall handler type definitions when targetting wasm32
 js-sys = "0.3.57"
 
 [dev-dependencies]
-# for testing compiled wasm
+# testing compiled wasm
 wasm-bindgen-test = "0.3.30"
+
+# assertion diffs
+pretty_assertions = "1.3.0"

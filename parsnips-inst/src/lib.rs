@@ -1,14 +1,18 @@
-// source: https://student.cs.uwaterloo.ca/~isg/res/mips/opcodes
-// TODO: figure out how to make this less boilerplatey, maybe with a proceedural
-// macro?
+// TODO: uncommment this when https://github.com/rust-lang/rust/issues/48665
+// gets fixed some day, or if there's a better workaround
+// #![no_std]
 
-pub mod function;
+pub mod funct;
 pub mod opcode;
+pub use funct::Funct;
+pub use opcode::Op;
 
 const MASK5: u32 = (1 << 5) - 1;
 const MASK6: u32 = (1 << 6) - 1;
 const MASK16: u32 = (1 << 16) - 1;
 const MASK26: u32 = (1 << 26) - 1;
+
+// source: https://student.cs.uwaterloo.ca/~isg/res/mips/opcodes
 
 pub type Inst = u32;
 pub trait InstFields {
@@ -141,8 +145,8 @@ impl MoveToFields for Inst {
 // immediate encodings
 
 pub trait ArithLogIFields {
-    fn rt(&self) -> usize;
     fn rs(&self) -> usize;
+    fn rt(&self) -> usize;
     fn imm(&self) -> u16;
 }
 impl ArithLogIFields for Inst {
@@ -191,7 +195,7 @@ impl BranchFields for Inst {
     }
     #[inline(always)]
     fn imm(&self) -> i32 {
-        (self & MASK16) as i16 as i32
+        ((self & MASK16) as i16 as i32) << 2
     }
 }
 
@@ -206,7 +210,7 @@ impl BranchZFields for Inst {
     }
     #[inline(always)]
     fn imm(&self) -> i32 {
-        (self & MASK16) as i16 as i32
+        ((self & MASK16) as i16 as i32) << 2
     }
 }
 
@@ -238,7 +242,7 @@ pub trait JumpFields {
 impl JumpFields for Inst {
     #[inline(always)]
     fn imm(&self) -> i32 {
-        ((self & MASK26) << 6) as i32 >> 6
+        ((self & MASK26) << 6) as i32 >> 4
     }
 }
 
