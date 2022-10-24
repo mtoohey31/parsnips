@@ -240,9 +240,8 @@ mod error {
 }
 
 use error::*;
-
-use inst::Inst;
-use parsnips_inst as inst;
+use parsnips_util as util;
+use util::inst;
 
 const MASK8: u32 = (1 << 8) - 1;
 const MASK16: u32 = (1 << 16) - 1;
@@ -290,7 +289,7 @@ impl Emulator {
             // handling the different endianness cases properly. the unsafe slice::align_to approach
             // is preferred to constructing an array of each of the 4 bytes and feeding it to
             // from_le because that isn't a no-op on little-endian systems
-            Inst::from_le(unsafe { memory.align_to::<u32>() }.1[(self.pc / 4) as usize])
+            util::Inst::from_le(unsafe { memory.align_to::<u32>() }.1[(self.pc / 4) as usize])
         } else {
             return Err(ERR_MISALIGNED_PC![self.pc]);
         };

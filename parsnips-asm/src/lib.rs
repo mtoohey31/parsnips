@@ -1,10 +1,10 @@
 #![no_std]
 
-use parsnips_inst::{Funct, Inst, Op};
 use parsnips_parser::{
     ArgumentKind, Ast, DataDeclaration, DataKind, DataValue, EntryKind, Instruction, Literal,
     NumLiteral, ParseMaybeSigned, ParseSigned, ParseUnsigned, SectionKind,
 };
+use parsnips_util::{Funct, Inst, Op};
 
 extern crate alloc;
 use alloc::{string::String, vec::Vec};

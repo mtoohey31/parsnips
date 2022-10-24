@@ -10,8 +10,8 @@ repository = "https://github.com/mtoohey31/parsnips"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-# instruction interpretation
-parsnips-inst.path = "../parsnips-inst"
+# a variety of things
+parsnips-util.path = "../parsnips-util"
 # ast types of input programs to be assembled
 parsnips-parser.path = "../parsnips-parser"
 

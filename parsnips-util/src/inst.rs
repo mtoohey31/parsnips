@@ -1,7 +1,3 @@
-// TODO: uncommment this when https://github.com/rust-lang/rust/issues/48665
-// gets fixed some day, or if there's a better workaround
-// #![no_std]
-
 pub mod funct;
 pub mod opcode;
 pub use funct::Funct;

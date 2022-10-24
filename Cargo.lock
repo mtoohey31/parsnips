@@ -221,8 +221,8 @@ version = "0.1.0"
 dependencies = [
  "ascii",
  "hashbrown",
- "parsnips-inst",
  "parsnips-parser",
+ "parsnips-util",
  "pretty_assertions",
  "strum",
  "strum_macros",
@@ -244,18 +244,10 @@ name = "parsnips-emu"
 version = "0.1.0"
 dependencies = [
  "js-sys",
- "parsnips-inst",
+ "parsnips-util",
  "pretty_assertions",
  "wasm-bindgen",
  "wasm-bindgen-test",
-]
-
-[[package]]
-name = "parsnips-inst"
-version = "0.1.0"
-dependencies = [
- "strum",
- "strum_macros",
 ]
 
 [[package]]
@@ -263,6 +255,14 @@ name = "parsnips-parser"
 version = "0.1.0"
 dependencies = [
  "pretty_assertions",
+ "strum",
+ "strum_macros",
+]
+
+[[package]]
+name = "parsnips-util"
+version = "0.1.0"
+dependencies = [
  "strum",
  "strum_macros",
 ]

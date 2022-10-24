@@ -1,9 +1,9 @@
 [package]
-name = "parsnips-inst"
+name = "parsnips-util"
 version = "0.1.0"
 edition = "2021"
 authors = ["Matthew Toohey <contact@mtoohey.com>"]
-description = "Instructions for parsnips MIPS tools."
+description = "Utilities for parsnips MIPS tools."
 readme = "../README.md"
 homepage = "https://github.com/mtoohey31/parsnips"
 repository = "https://github.com/mtoohey31/parsnips"
