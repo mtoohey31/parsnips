@@ -14,30 +14,38 @@ pub use inst::{Funct, Inst, Op};
 // break
 
 pub trait IndexAligned {
-    fn index_aligned<T: Copy>(&self, index: usize) -> T;
+    /// # Safety
+    ///
+    /// This transmutes self[index..index + size_of::<T>()] into T, so all the usual warnings apply
+    /// with transmuting.
+    unsafe fn index_aligned<T: Copy>(&self, index: usize) -> T;
 }
 
 impl IndexAligned for &[u8] {
-    fn index_aligned<T: Copy>(&self, index: usize) -> T {
+    unsafe fn index_aligned<T: Copy>(&self, index: usize) -> T {
         assert!(self.len() > index + (size_of::<T>() - 1));
-        unsafe { *(self.as_ptr().add(index) as *const T) }
+        *(self.as_ptr().add(index) as *const T)
     }
 }
 
 impl IndexAligned for &mut [u8] {
-    fn index_aligned<T: Copy>(&self, index: usize) -> T {
+    unsafe fn index_aligned<T: Copy>(&self, index: usize) -> T {
         assert!(self.len() > index + (size_of::<T>() - 1));
-        unsafe { *(self.as_ptr().add(index) as *const T) }
+        *(self.as_ptr().add(index) as *const T)
     }
 }
 
 pub trait IndexAlignedMut {
-    fn index_aligned_mut<T>(&mut self, index: usize) -> &mut T;
+    /// # Safety
+    ///
+    /// This transmutes self[index..index + size_of::<T>()] into T, so all the usual warnings apply
+    /// with transmuting.
+    unsafe fn index_aligned_mut<T>(&mut self, index: usize) -> &mut T;
 }
 
 impl IndexAlignedMut for &mut [u8] {
-    fn index_aligned_mut<T>(&mut self, index: usize) -> &mut T {
+    unsafe fn index_aligned_mut<T>(&mut self, index: usize) -> &mut T {
         assert!(self.len() > index + (size_of::<T>() - 1));
-        unsafe { (self.as_mut_ptr().add(index) as *mut T).as_mut().unwrap() }
+        (self.as_mut_ptr().add(index) as *mut T).as_mut().unwrap()
     }
 }
