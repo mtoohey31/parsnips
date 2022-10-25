@@ -7,6 +7,9 @@ PARSER_DEPS=parsnips-parser/Cargo.toml Cargo.lock parsnips-parser/src/**
 .PHONY: all
 all: check-fmt test check-clippy build
 
+.PHONY: ci
+ci: check-fmt test build
+
 .PHONY: check-fmt
 check-fmt:
 	rustfmt --check $$(find . \( \( -name target -o -name target-cov \) -prune -false \) -o -name '*.rs')
