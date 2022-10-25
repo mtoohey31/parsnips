@@ -1,3 +1,5 @@
+#![deny(clippy::cast_possible_truncation)]
+
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};

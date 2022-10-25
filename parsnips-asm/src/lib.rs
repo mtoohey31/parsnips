@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(clippy::cast_possible_truncation)]
 
 use parsnips_parser::{
     ArgumentKind, Ast, DataDeclaration, DataKind, DataValue, EntryKind, Instruction, Literal,
@@ -118,7 +119,7 @@ pub enum AssembleErrorKind<'a> {
     NonAsciiChar(char),
     NonAsciiStr(AsAsciiStrError),
     OverflowingShamt(NumLiteral<'a>),
-    OverflowingLabelReference(u32),
+    OverflowingLabelReference(usize),
     ParseIntError(IntErrorKind),
     RedeclaredLabel(&'a str),
     UnexpectedArgument(ArgumentKind<'a>),
@@ -311,7 +312,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
     let mut label_references = Vec::new();
     let mut initial_section_data: Option<bool> = None;
     // an optional tuple of u32 byte index within the program and usize character index within the source code
-    let mut initial_text_section: Option<(u32, usize)> = None;
+    let mut initial_text_section: Option<(usize, usize)> = None;
 
     for section in ast.sections {
         match section.kind {
@@ -440,7 +441,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                     initial_section_data = Some(false);
                 }
                 if initial_text_section.is_none() {
-                    initial_text_section = Some((program.len() as u32, section.pos));
+                    initial_text_section = Some((program.len(), section.pos));
                 }
 
                 for entry in entries {
@@ -690,7 +691,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                     }
 
                                     Op::SYSCALL => {
-                                        if arguments.len() > 0 {
+                                        if !arguments.is_empty() {
                                             let a = arguments.remove(0);
                                             return Err(AssembleError {
                                                 pos: a.pos,
@@ -872,34 +873,31 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
     for reference in label_references {
         let definition = label_definitions
             .get(reference.ident)
-            .ok_or_else(|| AssembleError {
+            .ok_or(AssembleError {
                 pos: reference.pos,
                 kind: AssembleErrorKind::UndefinedLabel(reference.ident),
             })?;
         let imm: u32 = match reference.kind {
             ReferenceKind::Jump => {
-                let full = (*definition as i32 - (reference.location + 4) as i32) >> 2;
-                full.checked_shl(6)
-                    .ok_or(AssembleErrorKind::OverflowingLabelReference(full as u32))
-                    .map(|s| s as u32 >> 6)
+                let full = (*definition >> 2) as isize - ((reference.location >> 2) + 1) as isize;
+                i32::try_from(full)
+                    .map_err(|_| full as usize)
+                    .and_then(|s| s.checked_shl(6).ok_or(full as usize).map(|s| s as u32 >> 6))
             }
             ReferenceKind::Imm => {
-                let full = (*definition as i32 - (reference.location + 4) as i32) >> 2;
+                let full = (*definition >> 2) as isize - ((reference.location >> 2) + 1) as isize;
                 i16::try_from(full)
-                    .map_err(|_| AssembleErrorKind::OverflowingLabelReference(full as u32))
                     .map(|s| s as u16 as u32)
+                    .map_err(|_| full as usize)
             }
-            ReferenceKind::RawImm => {
-                let full = *definition as i32;
-                i16::try_from(full)
-                    .map_err(|_| AssembleErrorKind::OverflowingLabelReference(full as u32))
-                    .map(|s| s as u16 as u32)
-            }
-            ReferenceKind::Raw => Ok(*definition as u32),
+            ReferenceKind::RawImm => i16::try_from(*definition)
+                .map(|s| s as u16 as u32)
+                .map_err(|_| *definition),
+            ReferenceKind::Raw => u32::try_from(*definition).map_err(|_| *definition),
         }
-        .map_err(|kind| AssembleError {
+        .map_err(|v| AssembleError {
             pos: reference.pos,
-            kind,
+            kind: AssembleErrorKind::OverflowingLabelReference(v),
         })?;
         *unsafe {
             program
@@ -913,14 +911,18 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
             pos: ast.eof_pos,
             kind: AssembleErrorKind::NoText,
         })?;
-        let imm = location - 4 >> 2;
+        let imm = (location - 4) >> 2;
         if imm > (1 << 26) - 1 {
             return Err(AssembleError {
                 pos,
                 kind: AssembleErrorKind::OverflowingLabelReference(imm),
             });
         }
-        *unsafe { program.as_mut_slice().index_aligned_mut::<u32>(0) } |= imm;
+
+        // this unwrap is safe because we have already ensured imm <= (1 << 26) - 1 above, which
+        // implies that imm is in-range for u32
+        *unsafe { program.as_mut_slice().index_aligned_mut::<u32>(0) } |=
+            u32::try_from(imm).unwrap();
     }
 
     Ok(program)
@@ -935,10 +937,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     fn str_to_u32(input: &str) -> u32 {
-        input
-            .chars()
-            .take(4)
-            .fold(0, |acc, c| (acc >> 8) + ((c as u32) << 24))
+        assert_eq!(input.len(), 4);
+        u32::from_le_bytes(input.as_ascii_str().unwrap().as_bytes().try_into().unwrap())
     }
 
     macro_rules! asm_test {
@@ -1010,7 +1010,7 @@ mod tests {
             12,
             // .text
             // la $t0, fibs
-            new_arith_log_i(Op::ADDI, Reg::Zero, Reg::T0, 1 * 4),
+            new_arith_log_i(Op::ADDI, Reg::Zero, Reg::T0, 4),
             // la $t5, fibs
             new_arith_log_i(Op::ADDI, Reg::Zero, Reg::T5, 13 * 4),
             // lw $t5, 0($t5)
@@ -1022,7 +1022,7 @@ mod tests {
             // sw $t2, 4($t0)
             new_load_store(Op::SW, Reg::T0, Reg::T2, 4),
             // addi $t1, $t5, -2
-            new_arith_log_i(Op::ADDI, Reg::T5, Reg::T1, -2 as i16 as u16),
+            new_arith_log_i(Op::ADDI, Reg::T5, Reg::T1, -2_i16 as u16),
             // loop: lw $t3, 0($t0)
             new_load_store(Op::LW, Reg::T0, Reg::T3, 0),
             // lw $t4, 4($t0)
@@ -1034,11 +1034,11 @@ mod tests {
             // addi $t0, $t0, 4
             new_arith_log_i(Op::ADDI, Reg::T0, Reg::T0, 4),
             // addi $t1, $t1, -1
-            new_arith_log_i(Op::ADDI, Reg::T1, Reg::T1, -1 as i16 as u16),
+            new_arith_log_i(Op::ADDI, Reg::T1, Reg::T1, -1_i16 as u16),
             // bgtz $t1, loop
-            new_branch_z(Op::BGTZ, Reg::T1) | ((21 - (27 + 1)) as i16 as u16 as u32),
+            new_branch_z(Op::BGTZ, Reg::T1) | ((21 - (27_i16 + 1)) as u16 as u32),
             // la $a0, fibs
-            new_arith_log_i(Op::ADDI, Reg::Zero, Reg::A0, 1 * 4),
+            new_arith_log_i(Op::ADDI, Reg::Zero, Reg::A0, 4),
             // add $a1, $zero, $t5
             new_reg(Reg::Zero, Reg::T5, Reg::A1, 0, Funct::ADD),
             // jal print
@@ -1086,9 +1086,9 @@ mod tests {
             // addi $t0, $t0, 4
             new_arith_log_i(Op::ADDI, Reg::T0, Reg::T0, 4),
             // addi $t1, $t1, -1
-            new_arith_log_i(Op::ADDI, Reg::T1, Reg::T1, -1 as i16 as u16),
+            new_arith_log_i(Op::ADDI, Reg::T1, Reg::T1, -1_i16 as u16),
             // bgtz $t1, out
-            new_branch_z(Op::BGTZ, Reg::T1) | (-9 as i16 as u16 as u32),
+            new_branch_z(Op::BGTZ, Reg::T1) | (-9_i16 as u16 as u32),
             // jr $ra
             new_reg(Reg::Ra, Reg::Zero, Reg::Zero, 0, Funct::JR),
         ]);
@@ -1378,7 +1378,7 @@ EXIT:
 j EXIT
 EXIT: syscall
             "#,
-            new_jump(Op::J) | 0,
+            new_jump(Op::J),
             SYSCALL
         );
         asm_text_test!("syscall", SYSCALL);
@@ -1428,7 +1428,7 @@ a: .half -3006
 a: .byte -7
             "#,
             37,
-            -37 as i32 as u32,
+            -37_i32 as u32,
             u32::from_le_bytes([3007_u16.to_le_bytes()[0], 3007_u16.to_le_bytes()[1], 0, 0]),
             u32::from_le_bytes([
                 (-3006_i16).to_le_bytes()[0],
@@ -1440,7 +1440,7 @@ a: .byte -7
         );
 
         // chars
-        asm_data_test!("a: .byte 'a'", u32::from_le_bytes(['a' as u8, 0, 0, 0]));
+        asm_data_test!("a: .byte 'a'", u32::from_le_bytes([b'a', 0, 0, 0]));
         asm_data_err_test!(
             "a: .byte '😄'",
             AssembleError {
@@ -1742,7 +1742,7 @@ VAL: .byte 'v'
             ),
             AssembleError {
                 pos: 19,
-                kind: AssembleErrorKind::OverflowingLabelReference((i16::MAX as u32 / 4 + 8) * 4),
+                kind: AssembleErrorKind::OverflowingLabelReference((i16::MAX as usize / 4 + 8) * 4),
             }
         );
     }
@@ -1766,7 +1766,7 @@ syscall
     .text
 syscall
             "#,
-            new_jump(Op::J) | 0,
+            new_jump(Op::J),
             SYSCALL,
         );
     }

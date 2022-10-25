@@ -30,7 +30,7 @@ pub fn run(path: PathBuf) -> Result<(), Box<dyn Error>> {
                         &s[..s
                             .iter()
                             .enumerate()
-                            .find(|(_, b)| **b == '\0' as u8)
+                            .find(|(_, b)| **b == b'\0')
                             .map(|(i, _)| i)
                             .unwrap_or(s.len())],
                     )?;

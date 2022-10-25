@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(clippy::cast_possible_truncation)]
 
 // TODO: fix the assumption that usize is at least as big as a u32. This isn't
 // true on some platforms, such as msp430-none-elf
@@ -150,7 +151,7 @@ mod error {
     pub enum EmulatorError {
         InvalidFunction(u8),
         InvalidOpcode(u8),
-        OutOfBounds { pc: u32, max: u32 },
+        OutOfBounds { pc: u32, max: usize },
         Overflow,
         MisalignedLH(u32),
         MisalignedLW(u32),
@@ -256,16 +257,22 @@ pub struct Emulator {
     pc: u32,
 }
 
+impl Default for Emulator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl Emulator {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new() -> Self {
-        return Self {
+        Self {
             regs: [0; 32],
             lo: 0,
             hi: 0,
             pc: 0,
-        };
+        }
     }
 
     pub fn get_reg(&self, reg: usize) -> u32 {
@@ -276,8 +283,8 @@ impl Emulator {
     // it to Emulator::new because wasm_bindgen values cannot have lifetimes
 
     pub fn step(&mut self, memory: &mut [u8]) -> Result<bool, ErrorType> {
-        if self.pc >= memory.len() as u32 {
-            return Err(ERR_OOB![self.pc, memory.len() as u32 - 4]);
+        if self.pc as usize >= memory.len() {
+            return Err(ERR_OOB![self.pc, memory.len() - 4]);
         }
         let inst = if self.pc % 4 == 0 {
             util::Inst::from_le(unsafe { memory.index_aligned(self.pc as usize) })
@@ -332,20 +339,27 @@ impl Emulator {
                         self.lo = self.regs[inst.rs()] / self.regs[inst.rt()];
                         self.hi = self.regs[inst.rs()] % self.regs[inst.rt()];
                     }
+                    // PERF: investigate whether there's a faster way to do these two operations.
+                    // Can I do some transmutation with i64's? How does that play with endianness?
                     MULT => {
                         use inst::DivMultFields;
 
                         let res =
                             self.regs[inst.rs()] as i32 as i64 * self.regs[inst.rt()] as i32 as i64;
-                        self.hi = (res / (u32::MAX as i64 + 1)) as u32;
-                        self.lo = (res % (u32::MAX as i64 + 1)) as u32;
+                        // these unwraps are safe because the preceeding operations will verify
+                        // that things are in bounds
+                        self.hi = i32::try_from(res / (1_i64 << 32)).unwrap() as u32;
+                        self.lo = i32::try_from(res % (1_i64 << 32)).unwrap() as u32;
                     }
                     MULTU => {
                         use inst::DivMultFields;
 
                         let res = self.regs[inst.rs()] as u64 * self.regs[inst.rt()] as u64;
-                        self.hi = (res / (u32::MAX as u64 + 1)) as u32;
-                        self.lo = (res % (u32::MAX as u64 + 1)) as u32;
+                        #[allow(clippy::cast_possible_truncation)]
+                        {
+                            self.hi = (res / (u32::MAX as u64 + 1)) as u32;
+                            self.lo = (res % (u32::MAX as u64 + 1)) as u32;
+                        }
                     }
                     NOR => {
                         use inst::ArithLogFields;
@@ -532,14 +546,14 @@ impl Emulator {
                 use inst::BranchFields;
 
                 if self.regs[inst.rs()] == self.regs[inst.rt()] {
-                    self.pc = (self.pc as i32 + inst.imm() as i16 as i32) as u32;
+                    self.pc = (self.pc as i32 + inst.imm() as i32) as u32;
                 }
             }
             BNE => {
                 use inst::BranchFields;
 
                 if self.regs[inst.rs()] != self.regs[inst.rt()] {
-                    self.pc = (self.pc as i32 + inst.imm() as i16 as i32) as u32;
+                    self.pc = (self.pc as i32 + inst.imm() as i32) as u32;
                 }
             }
             BLEZ => {
@@ -642,6 +656,8 @@ impl Emulator {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unusual_byte_groupings)]
+
     use super::*;
     use pretty_assertions::assert_eq;
     use util::le_byte_arr;
@@ -711,10 +727,7 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::Overflow) => true,
-                _ => false,
-            })
+            assert!(matches!(emu.step(&mut prog), Err(ErrorType::Overflow)))
         }
     }
 
@@ -1239,10 +1252,7 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::Overflow) => true,
-                _ => false,
-            })
+            assert!(matches!(emu.step(&mut prog), Err(ErrorType::Overflow)))
         }
     }
 
@@ -1313,10 +1323,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::OutOfBounds { pc: 132, max: 4 }) => true,
-                _ => false,
-            });
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::OutOfBounds { pc: 132, max: 4 })
+            ));
         }
     }
 
@@ -1357,10 +1367,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::MisalignedPC(0b00000000000000000000000000000001)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::MisalignedPC(0b00000000000000000000000000000001))
+            ))
         }
     }
 
@@ -1803,10 +1813,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::MisalignedLH(0b00000000000000000000000000000101)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::MisalignedLH(0b00000000000000000000000000000101))
+            ))
         }
     }
 
@@ -1845,10 +1855,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::MisalignedLH(0b00000000000000000000000000000101)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::MisalignedLH(0b00000000000000000000000000000101))
+            ))
         }
     }
 
@@ -1880,10 +1890,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::MisalignedSH(0b00000000000000000000000000000011)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::MisalignedSH(0b00000000000000000000000000000011))
+            ))
         }
     }
 
@@ -1922,10 +1932,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::MisalignedLW(0b00000000000000000000000000000010)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::MisalignedLW(0b00000000000000000000000000000010))
+            ))
         }
     }
 
@@ -1960,10 +1970,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::MisalignedSW(0b00000000000000000000000000010010)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::MisalignedSW(0b00000000000000000000000000010010))
+            ))
         }
     }
 
@@ -1993,10 +2003,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::InvalidFunction(0b111111)) => true,
-                _ => false,
-            });
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::InvalidFunction(0b111111))
+            ));
         }
     }
 
@@ -2014,10 +2024,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::InvalidOpcode(0b111111)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::InvalidOpcode(0b111111))
+            ))
         }
     }
 }
