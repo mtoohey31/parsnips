@@ -17,7 +17,7 @@ fmt:
 
 .PHONY: check-clippy
 check-clippy:
-	cargo clippy
+	cargo clippy --workspace --all-targets
 
 .PHONY: test
 test: test-parser test-asm test-emu test-web

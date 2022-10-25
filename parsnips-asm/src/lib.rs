@@ -1010,7 +1010,7 @@ mod tests {
             12,
             // .text
             // la $t0, fibs
-            new_arith_log_i(Op::ADDI, Reg::Zero, Reg::T0, 1 * 4),
+            new_arith_log_i(Op::ADDI, Reg::Zero, Reg::T0, 4),
             // la $t5, fibs
             new_arith_log_i(Op::ADDI, Reg::Zero, Reg::T5, 13 * 4),
             // lw $t5, 0($t5)
@@ -1022,7 +1022,7 @@ mod tests {
             // sw $t2, 4($t0)
             new_load_store(Op::SW, Reg::T0, Reg::T2, 4),
             // addi $t1, $t5, -2
-            new_arith_log_i(Op::ADDI, Reg::T5, Reg::T1, -2 as i16 as u16),
+            new_arith_log_i(Op::ADDI, Reg::T5, Reg::T1, -2_i16 as u16),
             // loop: lw $t3, 0($t0)
             new_load_store(Op::LW, Reg::T0, Reg::T3, 0),
             // lw $t4, 4($t0)
@@ -1034,11 +1034,11 @@ mod tests {
             // addi $t0, $t0, 4
             new_arith_log_i(Op::ADDI, Reg::T0, Reg::T0, 4),
             // addi $t1, $t1, -1
-            new_arith_log_i(Op::ADDI, Reg::T1, Reg::T1, -1 as i16 as u16),
+            new_arith_log_i(Op::ADDI, Reg::T1, Reg::T1, -1_i16 as u16),
             // bgtz $t1, loop
-            new_branch_z(Op::BGTZ, Reg::T1) | ((21 - (27 + 1)) as i16 as u16 as u32),
+            new_branch_z(Op::BGTZ, Reg::T1) | ((21 - (27_i16 + 1)) as u16 as u32),
             // la $a0, fibs
-            new_arith_log_i(Op::ADDI, Reg::Zero, Reg::A0, 1 * 4),
+            new_arith_log_i(Op::ADDI, Reg::Zero, Reg::A0, 4),
             // add $a1, $zero, $t5
             new_reg(Reg::Zero, Reg::T5, Reg::A1, 0, Funct::ADD),
             // jal print
@@ -1086,9 +1086,9 @@ mod tests {
             // addi $t0, $t0, 4
             new_arith_log_i(Op::ADDI, Reg::T0, Reg::T0, 4),
             // addi $t1, $t1, -1
-            new_arith_log_i(Op::ADDI, Reg::T1, Reg::T1, -1 as i16 as u16),
+            new_arith_log_i(Op::ADDI, Reg::T1, Reg::T1, -1_i16 as u16),
             // bgtz $t1, out
-            new_branch_z(Op::BGTZ, Reg::T1) | (-9 as i16 as u16 as u32),
+            new_branch_z(Op::BGTZ, Reg::T1) | (-9_i16 as u16 as u32),
             // jr $ra
             new_reg(Reg::Ra, Reg::Zero, Reg::Zero, 0, Funct::JR),
         ]);
@@ -1378,7 +1378,7 @@ EXIT:
 j EXIT
 EXIT: syscall
             "#,
-            new_jump(Op::J) | 0,
+            new_jump(Op::J),
             SYSCALL
         );
         asm_text_test!("syscall", SYSCALL);
@@ -1428,7 +1428,7 @@ a: .half -3006
 a: .byte -7
             "#,
             37,
-            -37 as i32 as u32,
+            -37_i32 as u32,
             u32::from_le_bytes([3007_u16.to_le_bytes()[0], 3007_u16.to_le_bytes()[1], 0, 0]),
             u32::from_le_bytes([
                 (-3006_i16).to_le_bytes()[0],
@@ -1440,7 +1440,7 @@ a: .byte -7
         );
 
         // chars
-        asm_data_test!("a: .byte 'a'", u32::from_le_bytes(['a' as u8, 0, 0, 0]));
+        asm_data_test!("a: .byte 'a'", u32::from_le_bytes([b'a', 0, 0, 0]));
         asm_data_err_test!(
             "a: .byte '😄'",
             AssembleError {
@@ -1766,7 +1766,7 @@ syscall
     .text
 syscall
             "#,
-            new_jump(Op::J) | 0,
+            new_jump(Op::J),
             SYSCALL,
         );
     }

@@ -1333,7 +1333,7 @@ asdf 0"#,
                 <$t>::parse_maybe_signed(NumLiteral {
                     negative: true,
                     radix: 10,
-                    body: &format!("{}", (<$ts>::MIN + 1) * -1),
+                    body: &format!("{}", -(<$ts>::MIN + 1)),
                 })
                 .unwrap(),
                 (<$ts>::MIN + 1) as $t

@@ -656,6 +656,8 @@ impl Emulator {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unusual_byte_groupings)]
+
     use super::*;
     use pretty_assertions::assert_eq;
     use util::le_byte_arr;
@@ -725,10 +727,7 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::Overflow) => true,
-                _ => false,
-            })
+            assert!(matches!(emu.step(&mut prog), Err(ErrorType::Overflow)))
         }
     }
 
@@ -1253,10 +1252,7 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::Overflow) => true,
-                _ => false,
-            })
+            assert!(matches!(emu.step(&mut prog), Err(ErrorType::Overflow)))
         }
     }
 
@@ -1327,10 +1323,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::OutOfBounds { pc: 132, max: 4 }) => true,
-                _ => false,
-            });
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::OutOfBounds { pc: 132, max: 4 })
+            ));
         }
     }
 
@@ -1371,10 +1367,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::MisalignedPC(0b00000000000000000000000000000001)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::MisalignedPC(0b00000000000000000000000000000001))
+            ))
         }
     }
 
@@ -1817,10 +1813,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::MisalignedLH(0b00000000000000000000000000000101)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::MisalignedLH(0b00000000000000000000000000000101))
+            ))
         }
     }
 
@@ -1859,10 +1855,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::MisalignedLH(0b00000000000000000000000000000101)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::MisalignedLH(0b00000000000000000000000000000101))
+            ))
         }
     }
 
@@ -1894,10 +1890,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::MisalignedSH(0b00000000000000000000000000000011)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::MisalignedSH(0b00000000000000000000000000000011))
+            ))
         }
     }
 
@@ -1936,10 +1932,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::MisalignedLW(0b00000000000000000000000000000010)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::MisalignedLW(0b00000000000000000000000000000010))
+            ))
         }
     }
 
@@ -1974,10 +1970,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::MisalignedSW(0b00000000000000000000000000010010)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::MisalignedSW(0b00000000000000000000000000010010))
+            ))
         }
     }
 
@@ -2007,10 +2003,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::InvalidFunction(0b111111)) => true,
-                _ => false,
-            });
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::InvalidFunction(0b111111))
+            ));
         }
     }
 
@@ -2028,10 +2024,10 @@ mod tests {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            assert!(match emu.step(&mut prog) {
-                Err(ErrorType::InvalidOpcode(0b111111)) => true,
-                _ => false,
-            })
+            assert!(matches!(
+                emu.step(&mut prog),
+                Err(ErrorType::InvalidOpcode(0b111111))
+            ))
         }
     }
 }
