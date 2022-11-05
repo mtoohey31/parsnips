@@ -27,7 +27,7 @@ check-clippy:
 	cargo clippy $(RUSTFLAGS) --workspace --all-targets
 
 .PHONY: test
-test: test-parser test-asm test-emu test-web
+test: test-parser test-asm test-emu test-big-endian test-wasm test-web
 
 .PHONY: test-parser
 test-parser:
@@ -37,11 +37,18 @@ test-parser:
 test-asm:
 	cargo test $(RUSTFLAGS) -p parsnips-asm
 
+.PHONY: test-big-endian
+test-big-endian:
+	$(MAKE) test-parser test-asm test-emu RUST_TARGET=s390x-unknown-linux-gnu
+
+.PHONY: test-wasm
+test-wasm:
+# TODO: figure out how to make this quieter without it blowing up
+	wasm-pack test --node --mode no-install parsnips-emu
+
 .PHONY: test-emu
 test-emu:
 	cargo test $(RUSTFLAGS) -p parsnips-emu
-# TODO: figure out how to make this quieter without it blowing up
-	wasm-pack test --node --mode no-install parsnips-emu
 
 .PHONY: test-web
 test-web: parsnips-web/node_modules parsnips-web/node_modules/parsnips-emu
