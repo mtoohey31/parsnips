@@ -31,8 +31,7 @@ pub fn run(path: PathBuf) -> Result<(), Box<dyn Error>> {
                             .iter()
                             .enumerate()
                             .find(|(_, b)| **b == b'\0')
-                            .map(|(i, _)| i)
-                            .unwrap_or(s.len())],
+                            .map_or(s.len(), |(i, _)| i)],
                     )?;
                 }
                 10 => {

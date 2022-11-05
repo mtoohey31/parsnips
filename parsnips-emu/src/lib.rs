@@ -1,5 +1,30 @@
 #![no_std]
+#![deny(clippy::alloc_instead_of_core)]
+#![deny(clippy::allow_attributes_without_reason)]
+// TODO: enable this when clippy hits 1.66.0
+// #![deny(clippy::as_ptr_cast_mut)]
 #![deny(clippy::cast_possible_truncation)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::equatable_if_let)]
+#![deny(clippy::filter_map_next)]
+#![deny(clippy::flat_map_option)]
+#![deny(clippy::map_unwrap_or)]
+#![deny(clippy::missing_panics_doc)]
+#![deny(clippy::option_if_let_else)]
+#![deny(clippy::panic)]
+#![deny(clippy::std_instead_of_alloc)]
+#![deny(clippy::std_instead_of_core)]
+#![deny(clippy::todo)]
+#![deny(clippy::wildcard_enum_match_arm)]
+#![deny(clippy::wildcard_imports)]
+#![deny(macro_use_extern_crate)]
+// TODO: enable this when things are stable
+// #![deny(missing_docs)]
+// TODO: fix the false-positive here with js-sys and wasm-bindgen
+// #![deny(unused_crate_dependencies)]
+#![deny(unused_extern_crates)]
+#![deny(unused_lifetimes)]
+#![deny(unused_qualifications)]
 
 // TODO: fix the assumption that usize is at least as big as a u32. This isn't
 // true on some platforms, such as msp430-none-elf
@@ -240,9 +265,10 @@ mod error {
     }
 }
 
+#[allow(clippy::wildcard_imports)]
 use error::*;
 use parsnips_util as util;
-use util::{inst, IndexAligned, IndexAlignedMut};
+use util::{inst, IndexAligned, IndexAlignedMut, UnreachableUnwrap};
 
 const MASK8: u32 = (1 << 8) - 1;
 const MASK16: u32 = (1 << 16) - 1;
@@ -293,9 +319,11 @@ impl Emulator {
         };
         self.pc += 4;
 
+        #[allow(clippy::wildcard_imports)]
         use inst::opcode::*;
         match inst::InstFields::op(&inst) {
             REG => {
+                #[allow(clippy::wildcard_imports)]
                 use inst::funct::*;
                 use inst::RegFields;
 
@@ -348,8 +376,8 @@ impl Emulator {
                             self.regs[inst.rs()] as i32 as i64 * self.regs[inst.rt()] as i32 as i64;
                         // these unwraps are safe because the preceeding operations will verify
                         // that things are in bounds
-                        self.hi = i32::try_from(res / (1_i64 << 32)).unwrap() as u32;
-                        self.lo = i32::try_from(res % (1_i64 << 32)).unwrap() as u32;
+                        self.hi = i32::try_from(res / (1_i64 << 32)).unreachable_unwrap() as u32;
+                        self.lo = i32::try_from(res % (1_i64 << 32)).unreachable_unwrap() as u32;
                     }
                     MULTU => {
                         use inst::DivMultFields;
