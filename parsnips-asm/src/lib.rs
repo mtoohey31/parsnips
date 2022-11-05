@@ -221,7 +221,7 @@ macro_rules! push_int {
                     pos: $value_pos,
                     kind: AssembleErrorKind::ParseIntError(e),
                 })?
-                .to_le_bytes(),
+                .to_ne_bytes(),
         );
         pad(&mut $prog, pad_len);
     }};
@@ -240,7 +240,7 @@ macro_rules! push_array {
         let len = size_of::<$value_ty>() * size;
         let pad_len = pad_len(len);
         $prog.reserve(len + pad_len);
-        let value_bytes = value.to_le_bytes();
+        let value_bytes = value.to_ne_bytes();
         for _ in 0..size {
             $prog.extend_from_slice(&value_bytes);
         }
@@ -319,7 +319,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
             SectionKind::Data(entries) => {
                 if initial_section_data.is_none() {
                     initial_section_data = Some(true);
-                    program.extend_from_slice(&new_jump(Op::J).to_le_bytes());
+                    program.extend_from_slice(&new_jump(Op::J).to_ne_bytes());
                 }
 
                 for entry in entries {
@@ -710,7 +710,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                     }
                                 };
 
-                                program.extend_from_slice(&inst.to_le_bytes());
+                                program.extend_from_slice(&inst.to_ne_bytes());
                             } else if let Ok(funct) = Funct::try_from(name) {
                                 let (mut rs, mut rt) = (Reg::Zero, Reg::Zero);
                                 let mut rd = None;
@@ -816,7 +816,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                         shamt,
                                         funct,
                                     )
-                                    .to_le_bytes(),
+                                    .to_ne_bytes(),
                                 );
                             } else {
                                 // TODO: make pseudo-instructions configurable?
@@ -833,7 +833,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                         });
                                         program.extend_from_slice(
                                             &new_arith_log_i(Op::ADDI, Reg::Zero, rt, 0)
-                                                .to_le_bytes(),
+                                                .to_ne_bytes(),
                                         );
                                     }
                                     "li" => {
@@ -852,7 +852,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                                     }
                                                 })?,
                                             )
-                                            .to_le_bytes(),
+                                            .to_ne_bytes(),
                                         );
                                     }
                                     _ => {
@@ -903,7 +903,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
             program
                 .as_mut_slice()
                 .index_aligned_mut::<u32>(reference.location)
-        } |= imm.to_le();
+        } |= imm;
     }
 
     if Some(true) == initial_section_data {
@@ -922,7 +922,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
         // this unwrap is safe because we have already ensured imm <= (1 << 26) - 1 above, which
         // implies that imm is in-range for u32
         *unsafe { program.as_mut_slice().index_aligned_mut::<u32>(0) } |=
-            u32::try_from(imm).unwrap().to_le();
+            u32::try_from(imm).unwrap();
     }
 
     Ok(program)
@@ -933,12 +933,12 @@ mod tests {
     use super::*;
     use alloc::{borrow::ToOwned, format, vec};
     use parsnips_parser::{parse, Argument, Data, Entry, Section};
-    use parsnips_util::ne_byte_arr;
+    use parsnips_util::{ne_byte_arr, u32_from_ne_hwords};
     use pretty_assertions::assert_eq;
 
     fn str_to_u32(input: &str) -> u32 {
         assert_eq!(input.len(), 4);
-        u32::from_le_bytes(input.as_ascii_str().unwrap().as_bytes().try_into().unwrap())
+        u32::from_ne_bytes(input.as_ascii_str().unwrap().as_bytes().try_into().unwrap())
     }
 
     macro_rules! asm_test {
@@ -1429,18 +1429,14 @@ a: .byte -7
             "#,
             37,
             -37_i32 as u32,
-            u32::from_le_bytes([3007_u16.to_le_bytes()[0], 3007_u16.to_le_bytes()[1], 0, 0]),
-            u32::from_le_bytes([
-                (-3006_i16).to_le_bytes()[0],
-                (-3006_i16).to_le_bytes()[1],
-                0,
-                0
-            ]),
-            u32::from_le_bytes([-7_i8 as u8, 0, 0, 0]),
+            // TODO: swap these out for the utils function?
+            u32_from_ne_hwords([3007_u16, 0]),
+            u32_from_ne_hwords([-3006_i16 as u16, 0,]),
+            u32::from_ne_bytes([-7_i8 as u8, 0, 0, 0]),
         );
 
         // chars
-        asm_data_test!("a: .byte 'a'", u32::from_le_bytes([b'a', 0, 0, 0]));
+        asm_data_test!("a: .byte 'a'", u32::from_ne_bytes([b'a', 0, 0, 0]));
         asm_data_err_test!(
             "a: .byte '😄'",
             AssembleError {
@@ -1527,24 +1523,9 @@ a: .byte -98 : 3
             -98_i32 as u32,
             -98_i32 as u32,
             -98_i32 as u32,
-            u32::from_le_bytes([
-                (-980_i16).to_le_bytes()[0],
-                (-980_i16).to_le_bytes()[1],
-                (-980_i16).to_le_bytes()[0],
-                (-980_i16).to_le_bytes()[1],
-            ]),
-            u32::from_le_bytes([
-                (-980_i16).to_le_bytes()[0],
-                (-980_i16).to_le_bytes()[1],
-                0,
-                0
-            ]),
-            u32::from_le_bytes([
-                (-98_i8).to_le_bytes()[0],
-                (-98_i8).to_le_bytes()[0],
-                (-98_i8).to_le_bytes()[0],
-                0
-            ]),
+            u32_from_ne_hwords([-980_i16 as u16, -980_i16 as u16,]),
+            u32_from_ne_hwords([-980_i16 as u16, 0]),
+            u32::from_ne_bytes([-98_i8 as u8, -98_i8 as u8, -98_i8 as u8, 0]),
         );
         asm_data_err_test!(
             "a: .word -98 : -3",
