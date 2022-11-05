@@ -1429,7 +1429,6 @@ a: .byte -7
             "#,
             37,
             -37_i32 as u32,
-            // TODO: swap these out for the utils function?
             u32_from_ne_hwords([3007_u16, 0]),
             u32_from_ne_hwords([-3006_i16 as u16, 0,]),
             u32::from_ne_bytes([-7_i8 as u8, 0, 0, 0]),
