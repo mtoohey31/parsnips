@@ -4,7 +4,9 @@ EMU_DEPS=parsnips-emu/Cargo.toml Cargo.lock parsnips-emu/src/**
 UTIL_DEPS=parsnips-util/Cargo.toml Cargo.lock parsnips-util/src/**
 PARSER_DEPS=parsnips-parser/Cargo.toml Cargo.lock parsnips-parser/src/**
 
-RUSTFLAGS:=--quiet
+HOST_REGEX := (?<=^host: ).*$
+RUST_TARGET ?= $(shell rustc --version --verbose | grep -oP '$(HOST_REGEX)')
+RUSTFLAGS := --quiet --target $(RUST_TARGET)
 
 .PHONY: all
 all: check-fmt test check-clippy build
@@ -14,18 +16,18 @@ ci: check-fmt test build
 
 .PHONY: check-fmt
 check-fmt:
-	rustfmt $(RUSTFLAGS) --check $$(find . \( \( -name target -o -name target-cov \) -prune -false \) -o -name '*.rs')
+	rustfmt --quiet --check $$(find . \( \( -name target -o -name target-cov \) -prune -false \) -o -name '*.rs')
 
 .PHONY: fmt
 fmt:
-	rustfmt $(RUSTFLAGS) $$(find . \( \( -name target -o -name target-cov \) -prune -false \) -o -name '*.rs')
+	rustfmt --quiet $$(find . \( \( -name target -o -name target-cov \) -prune -false \) -o -name '*.rs')
 
 .PHONY: check-clippy
 check-clippy:
 	cargo clippy $(RUSTFLAGS) --workspace --all-targets
 
 .PHONY: test
-test: test-parser test-asm test-emu test-web
+test: test-parser test-asm test-emu test-big-endian test-wasm test-web
 
 .PHONY: test-parser
 test-parser:
@@ -35,11 +37,18 @@ test-parser:
 test-asm:
 	cargo test $(RUSTFLAGS) -p parsnips-asm
 
+.PHONY: test-big-endian
+test-big-endian:
+	$(MAKE) test-parser test-asm test-emu RUST_TARGET=s390x-unknown-linux-gnu
+
+.PHONY: test-wasm
+test-wasm:
+# TODO: figure out how to make this quieter without it blowing up
+	wasm-pack test --node --mode no-install parsnips-emu
+
 .PHONY: test-emu
 test-emu:
 	cargo test $(RUSTFLAGS) -p parsnips-emu
-# TODO: figure out how to make this quieter without it blowing up
-	wasm-pack test --node --mode no-install parsnips-emu
 
 .PHONY: test-web
 test-web: parsnips-web/node_modules parsnips-web/node_modules/parsnips-emu
@@ -52,7 +61,7 @@ target/release/par: $(CLI_DEPS) $(EMU_DEPS) $(UTIL_DEPS) $(PARSER_DEPS)
 	cargo build $(RUSTFLAGS) -p parsnips-cli --release
 
 parsnips-emu/pkg: $(EMU_DEPS) $(UTIL_DEPS) $(PARSER_DEPS)
-	cd parsnips-emu && wasm-pack build $(RUSTFLAGS) --target web --mode no-install
+	cd parsnips-emu && wasm-pack build --quiet --target web --mode no-install
 	rm -rf parsnips-web/node_modules/parsnips-emu
 
 parsnips-web/node_modules/parsnips-emu: parsnips-emu/pkg

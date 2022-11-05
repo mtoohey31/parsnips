@@ -286,8 +286,8 @@ impl Emulator {
         if self.pc as usize >= memory.len() {
             return Err(ERR_OOB![self.pc, memory.len() - 4]);
         }
-        let inst = if self.pc % 4 == 0 {
-            util::Inst::from_le(unsafe { memory.index_aligned(self.pc as usize) })
+        let inst: util::Inst = if self.pc % 4 == 0 {
+            unsafe { memory.index_aligned(self.pc as usize) }
         } else {
             return Err(ERR_MISALIGNED_PC![self.pc]);
         };
@@ -588,8 +588,7 @@ impl Emulator {
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
                 if addr % 2 == 0 {
                     self.regs[inst.rt()] =
-                        u16::from_le(unsafe { memory.index_aligned(addr as usize) }) as i16 as i32
-                            as u32;
+                        unsafe { memory.index_aligned::<u16>(addr as usize) } as i16 as i32 as u32;
                 } else {
                     return Err(ERR_MISALIGNED_LH![addr]);
                 }
@@ -600,7 +599,7 @@ impl Emulator {
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
                 if addr % 2 == 0 {
                     self.regs[inst.rt()] =
-                        u16::from_le(unsafe { memory.index_aligned(addr as usize) }) as u32;
+                        unsafe { memory.index_aligned::<u16>(addr as usize) } as u32;
                 } else {
                     return Err(ERR_MISALIGNED_LH![addr]);
                 }
@@ -610,8 +609,7 @@ impl Emulator {
 
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
                 if addr % 4 == 0 {
-                    self.regs[inst.rt()] =
-                        u32::from_le(unsafe { memory.index_aligned(addr as usize) });
+                    self.regs[inst.rt()] = unsafe { memory.index_aligned(addr as usize) };
                 } else {
                     return Err(ERR_MISALIGNED_LW![addr]);
                 }
@@ -628,7 +626,7 @@ impl Emulator {
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
                 if addr % 2 == 0 {
                     *unsafe { memory.as_mut().index_aligned_mut(addr as usize) } =
-                        ((self.regs[inst.rt()] & MASK16) as u16).to_le();
+                        (self.regs[inst.rt()] & MASK16) as u16;
                 } else {
                     return Err(ERR_MISALIGNED_SH![addr]);
                 }
@@ -660,13 +658,13 @@ mod tests {
 
     use super::*;
     use pretty_assertions::assert_eq;
-    use util::le_byte_arr;
+    use util::{ne_byte_arr, u32_from_ne_hwords};
     use wasm_bindgen_test::wasm_bindgen_test;
 
     #[test]
     #[wasm_bindgen_test]
     fn add_pos() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00011_0000000000000000 | 2,
             0b001000_00000_00010_0000000000000000 | 1,
             0b000000_00010_00011_00100_00101_100000,
@@ -680,7 +678,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn add_neg() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00011_0000000000000000 | (-1_i16 as u16 as u32),
             0b001000_00000_00010_0000000000000000 | (-1_i16 as u16 as u32),
             0b000000_00010_00011_00100_00101_100000,
@@ -694,7 +692,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn add_big() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00011_0000000000000000 | (i16::MAX as u32),
             0b001000_00000_00010_0000000000000000 | (i16::MAX as u32),
             0b000000_00010_00011_00100_00101_100000,
@@ -708,7 +706,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn add_overflow() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b000000_00000_00001_00010_11111_000000,
             0b000000_00000_00001_00011_11111_000000,
@@ -734,7 +732,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn addu_small() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001001_00000_00011_0000000000000000 | 2,
             0b001001_00000_00010_0000000000000000 | 1,
             0b000000_00010_00011_00100_00101_100001,
@@ -748,7 +746,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn addu_big() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001001_00000_00011_0000000000000000 | (u16::MAX as u32),
             0b001001_00000_00010_0000000000000000 | (u16::MAX as u32),
             0b000000_00010_00011_00100_00101_100001,
@@ -763,7 +761,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn and() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001001_00000_00011_1000001101101001,
             0b001001_00000_00010_1011000100111011,
             0b000000_00010_00011_00100_00101_100100,
@@ -780,7 +778,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn div() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 11,
             0b001000_00000_00010_0000000000000000 | 4,
             0b000000_00001_00010_0000000000_011010,
@@ -796,7 +794,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn divu() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 11,
             0b001000_00000_00010_0000000000000000 | 4,
             0b000000_00001_00010_0000000000_011011,
@@ -812,7 +810,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn mult_pos() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 11,
             0b001000_00000_00010_0000000000000000 | 4,
             0b000000_00001_00010_0000000000_011000,
@@ -827,7 +825,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn mult_neg() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | (-11_i16 as u16 as u32),
             0b001000_00000_00010_0000000000000000 | 4,
             0b000000_00001_00010_0000000000_011000,
@@ -843,7 +841,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn mult_big() {
         // TODO: make these bigger when shifts are added
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | (i16::MAX as u32),
             0b001000_00000_00010_0000000000000000 | (i16::MAX as u32),
             0b000000_00001_00010_0000000000_011000,
@@ -859,7 +857,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn multu_small() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 7,
             0b001000_00000_00010_0000000000000000 | 3,
             0b000000_00001_00010_0000000000_011001,
@@ -875,7 +873,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn multu_big() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | (-1_i16 as u16 as u32),
             0b001000_00000_00010_0000000000000000 | (-1_i16 as u16 as u32),
             0b000000_00001_00010_0000000000_011001,
@@ -891,7 +889,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn nor() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_1100000100001101,
             0b001001_00000_00010_1010101000101100,
             0b000000_00001_00010_00011_00000_100111,
@@ -906,7 +904,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn or() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001001_00000_00001_1100000100001101,
             0b001001_00000_00010_1010101000101100,
             0b000000_00001_00010_00011_00000_100101,
@@ -921,7 +919,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn ori() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001001_00000_00001_1100000100001101,
             0b001101_00001_00010_1010101000101100,
         ];
@@ -934,7 +932,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn xor() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001001_00000_00001_1100000100001101,
             0b001001_00000_00010_1010101000101100,
             0b000000_00001_00010_00011_00000_100110,
@@ -949,7 +947,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn xori() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001001_00000_00001_1100000100001101,
             0b001110_00001_00010_1010101000101100,
         ];
@@ -962,7 +960,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lhi() {
-        let mut prog = le_byte_arr![0b011001_00000_00001_0000000000000000 | 17];
+        let mut prog = ne_byte_arr![0b011001_00000_00001_0000000000000000 | 17];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[1], 17 << 16);
@@ -970,7 +968,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lhi_then_llo() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b011001_00000_00001_0000000000000000 | 17,
             0b011000_00000_00001_0000000000000000 | 17,
         ];
@@ -983,7 +981,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn llo() {
-        let mut prog = le_byte_arr![0b011000_00000_00001_0000000000000000 | 17];
+        let mut prog = ne_byte_arr![0b011000_00000_00001_0000000000000000 | 17];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[1], 17);
@@ -991,7 +989,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn llo_then_lhi() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b011000_00000_00001_0000000000000000 | 17,
             0b011001_00000_00001_0000000000000000 | 17,
         ];
@@ -1004,7 +1002,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn mtfhi() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 31,
             0b000000_00001_00000_00000_00000_010001,
             0b000000_00000_00000_00010_00000_010000,
@@ -1020,7 +1018,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn mtflo() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 31,
             0b000000_00001_00000_00000_00000_010011,
             0b000000_00000_00000_00010_00000_010010,
@@ -1036,7 +1034,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sll() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 31,
             0b000000_00000_00001_00001_00111_000000,
         ];
@@ -1049,7 +1047,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sllv() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 31,
             0b001000_00000_00010_0000000000000000 | 7,
             0b000000_00010_00001_00001_00000_000100,
@@ -1064,7 +1062,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sra() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | ((-2_i16 << 4) as u16 as u32),
             0b000000_00000_00001_00001_00011_000011,
         ];
@@ -1077,7 +1075,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn srav() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | ((-2_i16 << 4) as u16 as u32),
             0b001000_00000_00010_0000000000000000 | 3,
             0b000000_00010_00001_00001_00000_000111,
@@ -1092,7 +1090,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn srl() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | (31 << 6),
             0b000000_00000_00001_00001_00011_000010,
         ];
@@ -1104,7 +1102,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn srl_not_extended() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | ((-2_i16 << 4) as u16 as u32),
             0b000000_00000_00001_00001_01111_000010,
         ];
@@ -1117,7 +1115,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn srlv() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | (31 << 6),
             0b001000_00000_00010_0000000000000000 | 3,
             0b000000_00010_00001_00001_00000_000110,
@@ -1131,7 +1129,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn srlv_not_extended() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | ((-2_i16 << 4) as u16 as u32),
             0b001000_00000_00010_0000000000000000 | 15,
             0b000000_00010_00001_00001_00000_000110,
@@ -1148,7 +1146,7 @@ mod tests {
     fn sub_pos() {
         let minuend = 159;
         let subtrahend = 61;
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | minuend,
             0b001000_00000_00010_0000000000000000 | subtrahend,
             0b000000_00001_00010_00011_00000_100010,
@@ -1164,7 +1162,7 @@ mod tests {
     fn sub_neg() {
         let minuend = -61_i16;
         let subtrahend = -159_i16;
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | minuend as u16 as u32,
             0b001000_00000_00010_0000000000000000 | subtrahend as u16 as u32,
             0b000000_00001_00010_00011_00000_100010,
@@ -1181,7 +1179,7 @@ mod tests {
     fn subu_pos() {
         let minuend = 159;
         let subtrahend = 61;
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | minuend,
             0b001000_00000_00010_0000000000000000 | subtrahend,
             0b000000_00001_00010_00011_00000_100011,
@@ -1197,7 +1195,7 @@ mod tests {
     fn subu_neg() {
         let minuend = -61_i16;
         let subtrahend = -159_i16;
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | minuend as u16 as u32,
             0b001000_00000_00010_0000000000000000 | subtrahend as u16 as u32,
             0b000000_00001_00010_00011_00000_100011,
@@ -1215,7 +1213,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn addi_pos() {
-        let mut prog = le_byte_arr![0b001000_00000_00001_0000000000000000 | (i16::MAX as u32)];
+        let mut prog = ne_byte_arr![0b001000_00000_00001_0000000000000000 | (i16::MAX as u32)];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[1], i16::MAX as u32);
@@ -1223,7 +1221,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn addi_neg() {
-        let mut prog = le_byte_arr![0b001000_00000_00001_0000000000000000 | (-1_i16 as u16 as u32)];
+        let mut prog = ne_byte_arr![0b001000_00000_00001_0000000000000000 | (-1_i16 as u16 as u32)];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[1], -1_i16 as i32 as u32);
@@ -1231,7 +1229,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn addi_overflow() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b000000_00000_00001_00010_11111_000000,
             0b000000_00000_00001_00011_11111_000000,
@@ -1259,7 +1257,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn addiu_small() {
-        let mut prog = le_byte_arr![0b001001_00000_00001_0000000000000000 | 7];
+        let mut prog = ne_byte_arr![0b001001_00000_00001_0000000000000000 | 7];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[1], 7);
@@ -1267,7 +1265,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn addiu_big() {
-        let mut prog = le_byte_arr![0b001001_00000_00001_0000000000000000 | (u16::MAX as u32)];
+        let mut prog = ne_byte_arr![0b001001_00000_00001_0000000000000000 | (u16::MAX as u32)];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[1], u16::MAX as u32);
@@ -1276,7 +1274,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn andi() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001001_00000_00001_1000001101101001,
             0b001100_00001_00010_1011000100111011,
         ];
@@ -1289,7 +1287,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn j() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00001_00001_0000000000000000 | 1,
             // jump negative 8 relative to what the PC would become, back to the
             // first instruction
@@ -1306,7 +1304,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn j_outofbounds() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b000010_00000000000000000000100000,
             0b000000_00000_00000_0000000000000000,
         ];
@@ -1333,7 +1331,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn jr() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00001_00001_0000000000000000 | 1,
             // jump to position 0
             0b000000_00000_00000_00000_00000_001000,
@@ -1349,7 +1347,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn jr_misaligned_pc() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b000000_00001_00000_00000_00000_001000,
         ];
@@ -1377,7 +1375,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn jal() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00001_00001_0000000000000000 | 1,
             // jump negative 8 relative to what the PC would become, back to the
             // first instruction
@@ -1396,7 +1394,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn jalr() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00001_00001_0000000000000000 | 1,
             // jump to position 0
             0b000000_00000_00000_00000_00000_001001,
@@ -1414,7 +1412,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn slt_lt() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b001000_00000_00010_0000000000000000 | 2,
             0b000000_00001_00010_00011_00000_101010,
@@ -1428,7 +1426,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn slt_eq() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b001000_00000_00010_0000000000000000 | 1,
             0b000000_00001_00010_00011_00000_101010,
@@ -1442,7 +1440,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn slt_gt() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 2,
             0b001000_00000_00010_0000000000000000 | 1,
             0b000000_00001_00010_00011_00000_101010,
@@ -1456,7 +1454,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn slt_neg() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | -1_i16 as u16 as u32,
             0b001000_00000_00010_0000000000000000 | 1,
             0b000000_00001_00010_00011_00000_101010,
@@ -1471,7 +1469,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sltu_lt() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b001000_00000_00010_0000000000000000 | 2,
             0b000000_00001_00010_00011_00000_101001,
@@ -1485,7 +1483,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sltu_eq() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b001000_00000_00010_0000000000000000 | 1,
             0b000000_00001_00010_00011_00000_101001,
@@ -1499,7 +1497,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sltu_gt() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 2,
             0b001000_00000_00010_0000000000000000 | 1,
             0b000000_00001_00010_00011_00000_101001,
@@ -1513,7 +1511,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sltu_neg() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | -1_i16 as u16 as u32,
             0b001000_00000_00010_0000000000000000 | 1,
             0b000000_00001_00010_00011_00000_101001,
@@ -1528,7 +1526,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn slti_lt() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b001010_00001_00010_0000000000000000 | 2,
         ];
@@ -1540,7 +1538,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn slti_eq() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b001010_00001_00010_0000000000000000 | 1,
         ];
@@ -1552,7 +1550,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn slti_gt() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 2,
             0b001010_00001_00010_0000000000000000 | 1,
         ];
@@ -1564,7 +1562,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn slti_neg() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | -1_i16 as u16 as u32,
             0b001010_00001_00010_0000000000000000 | 1,
         ];
@@ -1577,7 +1575,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sltiu_lt() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b001011_00001_00010_0000000000000000 | 2,
         ];
@@ -1589,7 +1587,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sltiu_eq() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b001011_00001_00010_0000000000000000 | 1,
         ];
@@ -1601,7 +1599,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sltiu_gt() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 2,
             0b001011_00001_00010_0000000000000000 | 1,
         ];
@@ -1613,7 +1611,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sltiu_neg() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | -1_i16 as u16 as u32,
             0b001011_00001_00010_0000000000000000 | 1,
         ];
@@ -1626,7 +1624,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn beq_eq() {
-        let mut prog = le_byte_arr![0b000100_00000_00001_0000000000000000 | (12 >> 2)];
+        let mut prog = ne_byte_arr![0b000100_00000_00001_0000000000000000 | (12 >> 2)];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.pc, 4 + 12);
@@ -1634,7 +1632,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn beq_neq() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b000100_00000_00001_0000000000000000 | (12 >> 2),
         ];
@@ -1647,7 +1645,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn bne_neq() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b000101_00000_00001_0000000000000000 | (12 >> 2),
         ];
@@ -1659,7 +1657,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn bne_eq() {
-        let mut prog = le_byte_arr![0b000101_00000_00001_0000000000000000 | (12 >> 2)];
+        let mut prog = ne_byte_arr![0b000101_00000_00001_0000000000000000 | (12 >> 2)];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.pc, 4);
@@ -1668,7 +1666,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn blez_zero() {
-        let mut prog = le_byte_arr![0b000110_00000_00000_0000000000000000 | (12 >> 2)];
+        let mut prog = ne_byte_arr![0b000110_00000_00000_0000000000000000 | (12 >> 2)];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.pc, 4 + 12);
@@ -1676,7 +1674,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn blez_pos_one() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b000110_00001_00000_0000000000000000 | (12 >> 2),
         ];
@@ -1688,7 +1686,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn blez_minus_one() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | (-1_i16 as u16 as u32),
             0b000110_00001_00000_0000000000000000 | (12 >> 2),
         ];
@@ -1701,7 +1699,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn bgtz_zero() {
-        let mut prog = le_byte_arr![0b000111_00000_00000_0000000000000000 | (12 >> 2)];
+        let mut prog = ne_byte_arr![0b000111_00000_00000_0000000000000000 | (12 >> 2)];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.pc, 4);
@@ -1709,7 +1707,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn bgtz_one() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 1,
             0b000111_00001_00000_0000000000000000 | (12 >> 2),
         ];
@@ -1722,9 +1720,9 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lb_pos() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b100000_00000_00001_0000000000000101,
-            0b00000000_00000000_00101101_00000000,
+            u32::from_ne_bytes([0, 0b00101101, 0, 0]),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
@@ -1733,9 +1731,9 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lb_neg() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b100000_00000_00001_0000000000000101,
-            (-7_i8 as u8 as u32) << 8,
+            u32::from_ne_bytes([0, -7_i8 as u8, 0, 0]),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
@@ -1745,9 +1743,9 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lbu_pos() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b100100_00000_00001_0000000000000101,
-            0b00000000_00000000_00101101_00000000,
+            u32::from_ne_bytes([0, 0b00101101, 0, 0]),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
@@ -1756,9 +1754,9 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lbu_neg() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b100100_00000_00001_0000000000000101,
-            (-7_i8 as u8 as u32) << 8,
+            u32::from_ne_bytes([0, -7_i8 as u8, 0, 0]),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
@@ -1768,7 +1766,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sb() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 9185,
             0b101000_00000_00001_0000000000000011,
         ];
@@ -1781,9 +1779,9 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lh_pos() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b100001_00000_00001_0000000000000100,
-            0b00000000_00000000_01001101_00101101,
+            u32_from_ne_hwords([0b01001101_00101101, 0]),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
@@ -1792,7 +1790,10 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lh_neg() {
-        let mut prog = le_byte_arr![0b100001_00000_00001_0000000000000100, -7_i16 as u16 as u32,];
+        let mut prog = ne_byte_arr![
+            0b100001_00000_00001_0000000000000100,
+            u32_from_ne_hwords([-7_i16 as u16, 0])
+        ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[1], -7_i32 as u32);
@@ -1800,7 +1801,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lh_misaligned() {
-        let mut prog = le_byte_arr![0b100001_00000_00001_0000000000000101];
+        let mut prog = ne_byte_arr![0b100001_00000_00001_0000000000000101];
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
@@ -1823,9 +1824,9 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lhu_pos() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b100101_00000_00001_0000000000000100,
-            0b00000000_00000000_01001101_00101101,
+            u32_from_ne_hwords([0b01001101_00101101, 0]),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
@@ -1834,7 +1835,10 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lhu_neg() {
-        let mut prog = le_byte_arr![0b100101_00000_00001_0000000000000100, -7_i16 as u16 as u32,];
+        let mut prog = ne_byte_arr![
+            0b100101_00000_00001_0000000000000100,
+            u32_from_ne_hwords([-7_i16 as u16, 0])
+        ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[1], -7_i16 as u16 as u32);
@@ -1842,7 +1846,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lhu_misaligned() {
-        let mut prog = le_byte_arr![0b100101_00000_00001_0000000000000101];
+        let mut prog = ne_byte_arr![0b100101_00000_00001_0000000000000101];
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
@@ -1865,7 +1869,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sh() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | 9185,
             0b101001_00000_00001_0000000000000010,
         ];
@@ -1877,7 +1881,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sh_misaligned() {
-        let mut prog = le_byte_arr![0b101001_00000_00001_0000000000000011];
+        let mut prog = ne_byte_arr![0b101001_00000_00001_0000000000000011];
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
@@ -1900,7 +1904,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lw_pos() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b100011_00000_00001_0000000000000100,
             0b01010011_10011001_11001101_10101101,
         ];
@@ -1911,7 +1915,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lw_neg() {
-        let mut prog = le_byte_arr![0b100011_00000_00001_0000000000000100, -7_i32 as u32,];
+        let mut prog = ne_byte_arr![0b100011_00000_00001_0000000000000100, -7_i32 as u32,];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[1], -7_i32 as u32);
@@ -1919,7 +1923,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lw_misaligned() {
-        let mut prog = le_byte_arr![0b100011_00000_00001_0000000000000010];
+        let mut prog = ne_byte_arr![0b100011_00000_00001_0000000000000010];
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
@@ -1942,7 +1946,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sw() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b001000_00000_00001_0000000000000000 | -9185_i16 as u16 as u32,
             0b101011_00000_00001_0000000000000100,
         ];
@@ -1957,7 +1961,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn sw_misaligned() {
-        let mut prog = le_byte_arr![0b101011_00000_00001_0000000000010010];
+        let mut prog = ne_byte_arr![0b101011_00000_00001_0000000000010010];
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
@@ -1980,7 +1984,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn syscall() {
-        let mut prog = le_byte_arr![
+        let mut prog = ne_byte_arr![
             0b011010_00000000000000000000000000,
             0b000000_00010_00011_00100_00101_100000,
         ];
@@ -1992,7 +1996,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn invalid_funct() {
-        let mut prog = le_byte_arr![0b000000_00000_00000_00000_00000_111111];
+        let mut prog = ne_byte_arr![0b000000_00000_00000_00000_00000_111111];
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
@@ -2013,7 +2017,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn invalid_opcode() {
-        let mut prog = le_byte_arr![0b111111_00000_00000_00000_00000_000000];
+        let mut prog = ne_byte_arr![0b111111_00000_00000_00000_00000_000000];
         let mut emu = Emulator::new();
         #[cfg(target_arch = "wasm32")]
         {
