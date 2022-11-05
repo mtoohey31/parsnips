@@ -1,13 +1,15 @@
 #[macro_export]
-macro_rules! le_byte_arr {
+macro_rules! count {
+    () => (0usize);
+    ( $x:tt $($xs:tt)* ) => (1usize + count!($($xs)*));
+}
+
+#[macro_export]
+macro_rules! ne_byte_arr {
     ($($w:expr),+ $(,)?) => {
-        [
-            $(
-                u32::to_le_bytes($w)[0],
-                u32::to_le_bytes($w)[1],
-                u32::to_le_bytes($w)[2],
-                u32::to_le_bytes($w)[3],
-            )*
-        ]
+        {
+            use parsnips_util::count;
+            unsafe{ core::mem::transmute::<[u32; parsnips_util::count!($($w)*)], [u8; count!($($w)*)*4]>([$($w),+]) }
+        }
     }
 }

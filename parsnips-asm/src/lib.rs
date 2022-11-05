@@ -933,7 +933,7 @@ mod tests {
     use super::*;
     use alloc::{borrow::ToOwned, format, vec};
     use parsnips_parser::{parse, Argument, Data, Entry, Section};
-    use parsnips_util::le_byte_arr;
+    use parsnips_util::ne_byte_arr;
     use pretty_assertions::assert_eq;
 
     fn str_to_u32(input: &str) -> u32 {
@@ -943,7 +943,7 @@ mod tests {
 
     macro_rules! asm_test {
         ($s:expr,$($x:expr),+ $(,)?) => {
-            assert_eq!(assemble(parse($s).unwrap()).unwrap(), le_byte_arr![$($x),+])
+            assert_eq!(assemble(parse($s).unwrap()).unwrap(), ne_byte_arr![$($x),+])
         }
     }
 
@@ -990,7 +990,7 @@ mod tests {
     #[test]
     fn fib() {
         let mut expected: Vec<u8> = Vec::new();
-        expected.extend_from_slice(&le_byte_arr![
+        expected.extend_from_slice(&ne_byte_arr![
             new_jump(Op::J) | 13, // assembler inserted jump to first .text
             // .data
             // fibs
@@ -1059,7 +1059,7 @@ mod tests {
             str_to_u32("s ar"),
             str_to_u32("e:\n\0"),
         ]);
-        expected.extend_from_slice(&le_byte_arr![
+        expected.extend_from_slice(&ne_byte_arr![
             // .text
             // print: add $t0, $zero, $a0
             new_reg(Reg::Zero, Reg::A0, Reg::T0, 0, Funct::ADD),
