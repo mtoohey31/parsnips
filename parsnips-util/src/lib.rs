@@ -4,10 +4,11 @@
 #![deny(clippy::cast_possible_truncation)]
 
 pub mod inst;
-use core::mem::size_of;
 pub mod test;
-
 pub use inst::{Funct, Inst, Op};
+
+use core::mem::size_of;
+use std::mem::transmute;
 
 // TODO: *_ptr::add is technically unsafe here, because it requires that index
 // cannot overflow an isize, so if someone managed to allocate an array larger
@@ -49,4 +50,8 @@ impl IndexAlignedMut for &mut [u8] {
         assert!(self.len() > index + (size_of::<T>() - 1));
         (self.as_mut_ptr().add(index) as *mut T).as_mut().unwrap()
     }
+}
+
+pub fn u32_from_ne_hwords(hwords: [u16; 2]) -> u32 {
+    unsafe { transmute(hwords) }
 }

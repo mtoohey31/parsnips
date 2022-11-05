@@ -286,8 +286,8 @@ impl Emulator {
         if self.pc as usize >= memory.len() {
             return Err(ERR_OOB![self.pc, memory.len() - 4]);
         }
-        let inst = if self.pc % 4 == 0 {
-            util::Inst::from_le(unsafe { memory.index_aligned(self.pc as usize) })
+        let inst: util::Inst = if self.pc % 4 == 0 {
+            unsafe { memory.index_aligned(self.pc as usize) }
         } else {
             return Err(ERR_MISALIGNED_PC![self.pc]);
         };
@@ -588,8 +588,7 @@ impl Emulator {
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
                 if addr % 2 == 0 {
                     self.regs[inst.rt()] =
-                        u16::from_le(unsafe { memory.index_aligned(addr as usize) }) as i16 as i32
-                            as u32;
+                        unsafe { memory.index_aligned::<u16>(addr as usize) } as i16 as i32 as u32;
                 } else {
                     return Err(ERR_MISALIGNED_LH![addr]);
                 }
@@ -600,7 +599,7 @@ impl Emulator {
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
                 if addr % 2 == 0 {
                     self.regs[inst.rt()] =
-                        u16::from_le(unsafe { memory.index_aligned(addr as usize) }) as u32;
+                        unsafe { memory.index_aligned::<u16>(addr as usize) } as u32;
                 } else {
                     return Err(ERR_MISALIGNED_LH![addr]);
                 }
@@ -610,8 +609,7 @@ impl Emulator {
 
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
                 if addr % 4 == 0 {
-                    self.regs[inst.rt()] =
-                        u32::from_le(unsafe { memory.index_aligned(addr as usize) });
+                    self.regs[inst.rt()] = unsafe { memory.index_aligned(addr as usize) };
                 } else {
                     return Err(ERR_MISALIGNED_LW![addr]);
                 }
@@ -660,7 +658,7 @@ mod tests {
 
     use super::*;
     use pretty_assertions::assert_eq;
-    use util::ne_byte_arr;
+    use util::{ne_byte_arr, u32_from_ne_hwords};
     use wasm_bindgen_test::wasm_bindgen_test;
 
     #[test]
@@ -1724,7 +1722,7 @@ mod tests {
     fn lb_pos() {
         let mut prog = ne_byte_arr![
             0b100000_00000_00001_0000000000000101,
-            0b00000000_00000000_00101101_00000000,
+            u32::from_ne_bytes([0, 0b00101101, 0, 0]),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
@@ -1735,7 +1733,7 @@ mod tests {
     fn lb_neg() {
         let mut prog = ne_byte_arr![
             0b100000_00000_00001_0000000000000101,
-            (-7_i8 as u8 as u32) << 8,
+            u32::from_ne_bytes([0, -7_i8 as u8, 0, 0]),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
@@ -1747,7 +1745,7 @@ mod tests {
     fn lbu_pos() {
         let mut prog = ne_byte_arr![
             0b100100_00000_00001_0000000000000101,
-            0b00000000_00000000_00101101_00000000,
+            u32::from_ne_bytes([0, 0b00101101, 0, 0]),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
@@ -1758,7 +1756,7 @@ mod tests {
     fn lbu_neg() {
         let mut prog = ne_byte_arr![
             0b100100_00000_00001_0000000000000101,
-            (-7_i8 as u8 as u32) << 8,
+            u32::from_ne_bytes([0, -7_i8 as u8, 0, 0]),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
@@ -1783,7 +1781,7 @@ mod tests {
     fn lh_pos() {
         let mut prog = ne_byte_arr![
             0b100001_00000_00001_0000000000000100,
-            0b00000000_00000000_01001101_00101101,
+            u32_from_ne_hwords([0b01001101_00101101, 0]),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
@@ -1792,7 +1790,10 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lh_neg() {
-        let mut prog = ne_byte_arr![0b100001_00000_00001_0000000000000100, -7_i16 as u16 as u32,];
+        let mut prog = ne_byte_arr![
+            0b100001_00000_00001_0000000000000100,
+            u32_from_ne_hwords([-7_i16 as u16, 0])
+        ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[1], -7_i32 as u32);
@@ -1825,7 +1826,7 @@ mod tests {
     fn lhu_pos() {
         let mut prog = ne_byte_arr![
             0b100101_00000_00001_0000000000000100,
-            0b00000000_00000000_01001101_00101101,
+            u32_from_ne_hwords([0b01001101_00101101, 0]),
         ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
@@ -1834,7 +1835,10 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn lhu_neg() {
-        let mut prog = ne_byte_arr![0b100101_00000_00001_0000000000000100, -7_i16 as u16 as u32,];
+        let mut prog = ne_byte_arr![
+            0b100101_00000_00001_0000000000000100,
+            u32_from_ne_hwords([-7_i16 as u16, 0])
+        ];
         let mut emu = Emulator::new();
         emu.step(&mut prog).unwrap();
         assert_eq!(emu.regs[1], -7_i16 as u16 as u32);
