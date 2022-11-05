@@ -254,6 +254,7 @@ dependencies = [
 name = "parsnips-parser"
 version = "0.1.0"
 dependencies = [
+ "parsnips-util",
  "pretty_assertions",
  "strum",
  "strum_macros",

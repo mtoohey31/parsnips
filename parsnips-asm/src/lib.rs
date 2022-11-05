@@ -1,11 +1,35 @@
 #![no_std]
+#![deny(clippy::alloc_instead_of_core)]
+#![deny(clippy::allow_attributes_without_reason)]
+// TODO: enable this when clippy hits 1.66.0
+// #![deny(clippy::as_ptr_cast_mut)]
 #![deny(clippy::cast_possible_truncation)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::equatable_if_let)]
+#![deny(clippy::filter_map_next)]
+#![deny(clippy::flat_map_option)]
+#![deny(clippy::map_unwrap_or)]
+#![deny(clippy::missing_panics_doc)]
+#![deny(clippy::option_if_let_else)]
+#![deny(clippy::panic)]
+#![deny(clippy::std_instead_of_alloc)]
+#![deny(clippy::std_instead_of_core)]
+#![deny(clippy::todo)]
+#![deny(clippy::wildcard_enum_match_arm)]
+#![deny(clippy::wildcard_imports)]
+#![deny(macro_use_extern_crate)]
+// TODO: enable this when things are stable
+// #![deny(missing_docs)]
+#![deny(unused_crate_dependencies)]
+#![deny(unused_extern_crates)]
+#![deny(unused_lifetimes)]
+#![deny(unused_qualifications)]
 
 use parsnips_parser::{
     ArgumentKind, Ast, DataDeclaration, DataKind, DataValue, EntryKind, Instruction, Literal,
     NumLiteral, ParseMaybeSigned, ParseSigned, ParseUnsigned, SectionKind,
 };
-use parsnips_util::{Funct, IndexAlignedMut, Inst, Op};
+use parsnips_util::{Funct, IndexAlignedMut, Inst, Op, UnreachableUnwrap};
 
 extern crate alloc;
 use alloc::{string::String, vec::Vec};
@@ -470,6 +494,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                     | Op::SLTIU => {
                                         assert_nargs!(arguments, 3, end_pos);
                                         let (reg, pos) = expect_reg!(arguments);
+                                        #[allow(clippy::wildcard_enum_match_arm)]
                                         match reg {
                                             Reg::Zero => {
                                                 return Err(AssembleError {
@@ -501,6 +526,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                         assert_nargs!(arguments, 2, end_pos);
                                         let (reg, pos) = expect_reg!(arguments);
                                         let (lit, lit_pos) = expect_num_lit!(arguments);
+                                        #[allow(clippy::wildcard_enum_match_arm)]
                                         match reg {
                                             Reg::Zero => {
                                                 return Err(AssembleError {
@@ -759,14 +785,19 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                             Err(e) => {
                                                 return Err(AssembleError {
                                                     pos: lit_pos,
-                                                    kind: match e {
-                                                        IntErrorKind::PosOverflow
-                                                        | IntErrorKind::NegOverflow => {
-                                                            AssembleErrorKind::OverflowingShamt(
-                                                                shamt_lit,
-                                                            )
+                                                    kind: {
+                                                        #[allow(clippy::wildcard_enum_match_arm)]
+                                                        match e {
+                                                            IntErrorKind::PosOverflow
+                                                            | IntErrorKind::NegOverflow => {
+                                                                AssembleErrorKind::OverflowingShamt(
+                                                                    shamt_lit,
+                                                                )
+                                                            }
+                                                            _ => {
+                                                                AssembleErrorKind::ParseIntError(e)
+                                                            }
                                                         }
-                                                        _ => AssembleErrorKind::ParseIntError(e),
                                                     },
                                                 });
                                             }
@@ -812,7 +843,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
                                     &new_reg(
                                         rs,
                                         rt,
-                                        rd.map(|(rd, _)| rd).unwrap_or(Reg::Zero),
+                                        rd.map_or(Reg::Zero, |(rd, _)| rd),
                                         shamt,
                                         funct,
                                     )
@@ -922,7 +953,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
         // this unwrap is safe because we have already ensured imm <= (1 << 26) - 1 above, which
         // implies that imm is in-range for u32
         *unsafe { program.as_mut_slice().index_aligned_mut::<u32>(0) } |=
-            u32::try_from(imm).unwrap();
+            u32::try_from(imm).unreachable_unwrap();
     }
 
     Ok(program)

@@ -1,5 +1,29 @@
 #![no_std]
+#![deny(clippy::alloc_instead_of_core)]
+#![deny(clippy::allow_attributes_without_reason)]
+// TODO: enable this when clippy hits 1.66.0
+// #![deny(clippy::as_ptr_cast_mut)]
 #![deny(clippy::cast_possible_truncation)]
+#![deny(clippy::dbg_macro)]
+#![deny(clippy::equatable_if_let)]
+#![deny(clippy::filter_map_next)]
+#![deny(clippy::flat_map_option)]
+#![deny(clippy::map_unwrap_or)]
+#![deny(clippy::missing_panics_doc)]
+#![deny(clippy::option_if_let_else)]
+#![deny(clippy::panic)]
+#![deny(clippy::std_instead_of_alloc)]
+#![deny(clippy::std_instead_of_core)]
+#![deny(clippy::todo)]
+#![deny(clippy::wildcard_enum_match_arm)]
+#![deny(clippy::wildcard_imports)]
+#![deny(macro_use_extern_crate)]
+// TODO: enable this when things are stable
+// #![deny(missing_docs)]
+#![deny(unused_crate_dependencies)]
+#![deny(unused_extern_crates)]
+#![deny(unused_lifetimes)]
+#![deny(unused_qualifications)]
 
 mod lex;
 use core::num::IntErrorKind;
@@ -8,6 +32,7 @@ use lex::{lex, LexError, Token, TokenKind};
 
 extern crate alloc;
 use alloc::vec::Vec;
+use parsnips_util::UnreachableUnwrap;
 use strum_macros::EnumString;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -146,9 +171,12 @@ pub trait ParseMaybeSigned {
 impl ParseMaybeSigned for u8 {
     fn parse_maybe_signed(num_lit: NumLiteral) -> Result<Self, IntErrorKind> {
         Self::from_str_radix(num_lit.body, num_lit.radix)
-            .map_err(|err| match err.kind() {
-                IntErrorKind::PosOverflow if num_lit.negative => IntErrorKind::NegOverflow,
-                _ => err.kind().clone(),
+            .map_err(|err| {
+                if err.kind() == &IntErrorKind::PosOverflow && num_lit.negative {
+                    IntErrorKind::NegOverflow
+                } else {
+                    err.kind().clone()
+                }
             })
             .and_then(|raw| {
                 if num_lit.negative {
@@ -168,9 +196,12 @@ impl ParseMaybeSigned for u16 {
         Self: Sized,
     {
         Self::from_str_radix(num_lit.body, num_lit.radix)
-            .map_err(|err| match err.kind() {
-                IntErrorKind::PosOverflow if num_lit.negative => IntErrorKind::NegOverflow,
-                _ => err.kind().clone(),
+            .map_err(|err| {
+                if err.kind() == &IntErrorKind::PosOverflow && num_lit.negative {
+                    IntErrorKind::NegOverflow
+                } else {
+                    err.kind().clone()
+                }
             })
             .and_then(|raw| {
                 if num_lit.negative {
@@ -190,9 +221,12 @@ impl ParseMaybeSigned for u32 {
         Self: Sized,
     {
         Self::from_str_radix(num_lit.body, num_lit.radix)
-            .map_err(|err| match err.kind() {
-                IntErrorKind::PosOverflow if num_lit.negative => IntErrorKind::NegOverflow,
-                _ => err.kind().clone(),
+            .map_err(|err| {
+                if err.kind() == &IntErrorKind::PosOverflow && num_lit.negative {
+                    IntErrorKind::NegOverflow
+                } else {
+                    err.kind().clone()
+                }
             })
             .and_then(|raw| {
                 if num_lit.negative {
@@ -219,9 +253,12 @@ impl ParseSigned for u16 {
     {
         i16::from_str_radix(num_lit.body, num_lit.radix)
             .map(|i| i as u16)
-            .map_err(|err| match err.kind() {
-                IntErrorKind::PosOverflow if num_lit.negative => IntErrorKind::NegOverflow,
-                _ => err.kind().clone(),
+            .map_err(|err| {
+                if err.kind() == &IntErrorKind::PosOverflow && num_lit.negative {
+                    IntErrorKind::NegOverflow
+                } else {
+                    err.kind().clone()
+                }
             })
     }
 }
@@ -349,7 +386,7 @@ macro_rules! expect_literal {
 macro_rules! skip_whitespace {
     ($ti:expr, $pos:expr) => {{
         let mut pos = $pos;
-        while let Some(&TokenKind::Whitespace) = $ti.peek().map(|t| &t.kind) {
+        while Some(&TokenKind::Whitespace) == $ti.peek().map(|t| &t.kind) {
             Token { pos, .. } = $ti.next().unwrap();
         }
         pos
@@ -419,7 +456,15 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                             kind: ParseErrorKind::UnknownDirective(d),
                         })
                     }
-                    _ => return Err(ParseError::from(tn)),
+                    TokenKind::Dot
+                    | TokenKind::Comma
+                    | TokenKind::Colon
+                    | TokenKind::OpenParen
+                    | TokenKind::CloseParen
+                    | TokenKind::Dollar
+                    | TokenKind::Whitespace
+                    | TokenKind::Newline
+                    | TokenKind::Literal(_) => return Err(ParseError::from(tn)),
                 }
                 let pos = skip_whitespace!(ti, tn.pos);
                 expect!(ti, TokenKind::Newline, pos)?;
@@ -520,7 +565,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
 
                         if Some(&TokenKind::Colon) == ti.peek().map(|t| &t.kind) {
                             // This is a label
-                            ti.next().unwrap();
+                            ti.next().unreachable_unwrap();
                             entries.push(Entry {
                                 pos: t.pos,
                                 kind: EntryKind::Label(i),
@@ -573,7 +618,7 @@ pub fn parse(input: &str) -> Result<Ast, ParseError> {
                                     TokenKind::Literal(Literal::Num(nl)) => {
                                         if Some(&TokenKind::OpenParen) == ti.peek().map(|t| &t.kind)
                                         {
-                                            let Token { pos, .. } = ti.next().unwrap();
+                                            let Token { pos, .. } = ti.next().unreachable_unwrap();
                                             expect!(ti, TokenKind::Dollar, pos)?;
                                             let (register, ident_pos) = expect_ident!(ti, pos + 1)?;
                                             args.push(Argument {
