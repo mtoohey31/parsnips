@@ -628,7 +628,7 @@ impl Emulator {
                 let addr = (self.regs[inst.rs()] as i32 + inst.imm()) as u32;
                 if addr % 2 == 0 {
                     *unsafe { memory.as_mut().index_aligned_mut(addr as usize) } =
-                        ((self.regs[inst.rt()] & MASK16) as u16).to_le();
+                        (self.regs[inst.rt()] & MASK16) as u16;
                 } else {
                     return Err(ERR_MISALIGNED_SH![addr]);
                 }

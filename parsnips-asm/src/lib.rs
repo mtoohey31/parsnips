@@ -922,7 +922,7 @@ pub fn assemble(ast: Ast) -> Result<Vec<u8>, AssembleError> {
         // this unwrap is safe because we have already ensured imm <= (1 << 26) - 1 above, which
         // implies that imm is in-range for u32
         *unsafe { program.as_mut_slice().index_aligned_mut::<u32>(0) } |=
-            u32::try_from(imm).unwrap();
+            u32::try_from(imm).unwrap().to_le();
     }
 
     Ok(program)
