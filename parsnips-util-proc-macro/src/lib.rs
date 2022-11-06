@@ -1,28 +1,30 @@
-#![deny(clippy::alloc_instead_of_core)]
-#![deny(clippy::allow_attributes_without_reason)]
-// TODO: enable this when clippy hits 1.66.0
-// #![deny(clippy::as_ptr_cast_mut)]
-#![deny(clippy::cast_possible_truncation)]
-#![deny(clippy::dbg_macro)]
-#![deny(clippy::equatable_if_let)]
-#![deny(clippy::filter_map_next)]
-#![deny(clippy::flat_map_option)]
-#![deny(clippy::map_unwrap_or)]
-#![deny(clippy::missing_panics_doc)]
-#![deny(clippy::option_if_let_else)]
-#![deny(clippy::panic)]
-#![deny(clippy::std_instead_of_alloc)]
-#![deny(clippy::std_instead_of_core)]
-#![deny(clippy::todo)]
-#![deny(clippy::wildcard_enum_match_arm)]
-#![deny(clippy::wildcard_imports)]
-#![deny(macro_use_extern_crate)]
-// TODO: enable this when things are stable
-// #![deny(missing_docs)]
-#![deny(unused_crate_dependencies)]
-#![deny(unused_extern_crates)]
-#![deny(unused_lifetimes)]
-#![deny(unused_qualifications)]
+#![deny(
+    clippy::alloc_instead_of_core,
+    clippy::allow_attributes_without_reason,
+    // TODO: enable this when clippy hits 1.66.0
+    // clippy::as_ptr_cast_mut,
+    clippy::cast_possible_truncation,
+    clippy::dbg_macro,
+    clippy::equatable_if_let,
+    clippy::filter_map_next,
+    clippy::flat_map_option,
+    clippy::map_unwrap_or,
+    clippy::missing_panics_doc,
+    clippy::option_if_let_else,
+    clippy::panic,
+    clippy::std_instead_of_alloc,
+    clippy::std_instead_of_core,
+    clippy::todo,
+    clippy::wildcard_enum_match_arm,
+    clippy::wildcard_imports,
+    macro_use_extern_crate,
+    // TODO: enable this when things are stable
+    // missing_docs,
+    unused_crate_dependencies,
+    unused_extern_crates,
+    unused_lifetimes,
+    unused_qualifications,
+)]
 
 use proc_macro::{Delimiter, Group, Literal, Punct, Spacing, TokenStream, TokenTree};
 
