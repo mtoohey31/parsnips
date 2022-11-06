@@ -1,4 +1,3 @@
-// #![no_std]
 #![deny(clippy::alloc_instead_of_core)]
 #![deny(clippy::allow_attributes_without_reason)]
 // TODO: enable this when clippy hits 1.66.0
@@ -25,57 +24,38 @@
 #![deny(unused_lifetimes)]
 #![deny(unused_qualifications)]
 
-use proc_macro::{Delimiter, Group, Ident, Literal, Punct, Spacing, TokenStream, TokenTree};
+use proc_macro::{Delimiter, Group, Literal, Punct, Spacing, TokenStream, TokenTree};
 
-#[proc_macro]
-#[allow(clippy::panic)]
+/// Populates enum variants using an encoding table provided to the attribute macro. Syntax:
+///
+/// IDENTIFIER (, IDENTIFIER)* `,`?
+///
 /// # Panics
 ///
-/// This macro panics (at compile time) when given invalid input. Valid input is of the form:
-///
-/// IDENTIFIER `:` (, IDENTIFIER)* `,`?
-pub fn encoding_table(tokens: TokenStream) -> TokenStream {
-    // the full result
-    let mut res = TokenStream::new();
-    // the stream for enum members, which is added as a group at the end
-    let mut members = TokenStream::new();
+/// This macro panics (at compile time) when given invalid input.
+#[proc_macro_attribute]
+#[allow(clippy::panic)]
+pub fn from_encoding_table(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let mut item_vec = item.into_iter().collect::<Vec<_>>();
+    match item_vec.pop() {
+        Some(TokenTree::Group(g)) if g.stream().is_empty() => {}
+        Some(t) => panic!(
+            "unexpected ending token for enum declaration '{}'; expected '{{}}'",
+            t
+        ),
+        None => panic!("no ending token for enum declaration"),
+    }
 
-    let mut ti = tokens.into_iter().enumerate();
+    let mut enum_members = TokenStream::new();
 
-    let enum_ident = match ti.next() {
-        Some((_, TokenTree::Ident(i))) => {
-            match ti.next() {
-                Some((_, TokenTree::Punct(p))) if p.as_char() == ':' => {}
-                None => {}
-                Some((_, t)) => panic!("unexpected token '{}', expected ':'", t),
-            }
-            i
-        }
-        Some((_, t)) => panic!("unexpected token '{}', expected enum name identifier", t),
-        None => panic!("expected enum name identifier"),
-    };
-
+    let mut ti = attr.into_iter().enumerate();
     while let Some((n, TokenTree::Ident(i))) = ti.next() {
         // "_" is used to indicate reserved instructions
         if i.to_string() != "_" {
-            let span = i.span();
-            let val: u8 = ((n - 2) / 2)
-                .try_into()
-                .expect("encoding table contains too many items to fit within a byte");
-            res.extend([
-                TokenTree::Ident(Ident::new("pub", span)),
-                TokenTree::Ident(Ident::new("const", span)),
-                TokenTree::Ident(i.clone()),
-                TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                TokenTree::Ident(Ident::new("u8", span)),
-                TokenTree::Punct(Punct::new('=', Spacing::Alone)),
-                TokenTree::Literal(Literal::u8_unsuffixed(val)),
-                TokenTree::Punct(Punct::new(';', Spacing::Alone)),
-            ]);
-            members.extend([
+            enum_members.extend([
                 TokenTree::Ident(i),
                 TokenTree::Punct(Punct::new('=', Spacing::Alone)),
-                TokenTree::Literal(Literal::u8_unsuffixed(val)),
+                TokenTree::Literal(Literal::usize_unsuffixed(n / 2)),
                 TokenTree::Punct(Punct::new(',', Spacing::Alone)),
             ]);
         }
@@ -89,12 +69,6 @@ pub fn encoding_table(tokens: TokenStream) -> TokenStream {
         panic!("unexpected token '{}', expected identifier or EOF", t);
     }
 
-    res.extend("#[repr(u8)]".parse::<TokenStream>());
-    res.extend("pub enum".parse::<TokenStream>());
-    res.extend([
-        TokenTree::Ident(enum_ident),
-        TokenTree::Group(Group::new(Delimiter::Brace, members)),
-    ]);
-
-    res
+    item_vec.push(TokenTree::Group(Group::new(Delimiter::Brace, enum_members)));
+    TokenStream::from_iter(item_vec)
 }

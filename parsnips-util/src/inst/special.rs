@@ -1,7 +1,9 @@
-use parsnips_util_proc_macro::encoding_table;
+use super::Inst;
+use num_enum::TryFromPrimitive;
+use parsnips_util_proc_macro::from_encoding_table;
 
-#[rustfmt::skip]
-encoding_table![Special: // spec table A.3
+#[from_encoding_table[
+    // spec table A.3
     //        000    001    010    011    100      101     110    111
     /* 000 */ SLL  , _    , SRL  , SRA  , SLLV   , LSA   , SRLV , SRAV  ,
     /* 001 */ _    , JALR , _    , _    , SYSCALL, BREAK , SDBBP, SYNC  ,
@@ -11,4 +13,17 @@ encoding_table![Special: // spec table A.3
     /* 101 */ _    , _    , SLT  , SLTU , _      , _     , _    , _     ,
     /* 110 */ TGE  , TGEU , TLT  , TLTU , TEQ    , SELEQZ, TNE  , SELNEZ,
     /* 111 */ _    , _    , _    , _    , _      , _     , _    , _     ,
-];
+]]
+#[derive(TryFromPrimitive)]
+#[repr(u8)]
+pub enum Special {}
+
+pub trait SpecialFields {
+    fn function(&self) -> Option<Special>;
+}
+
+impl SpecialFields for Inst {
+    fn function(&self) -> Option<Special> {
+        ((self & ((1 << 6) - 1)) as u8).try_into().ok()
+    }
+}

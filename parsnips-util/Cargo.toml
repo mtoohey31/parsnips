@@ -12,3 +12,6 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 # encoding_table macro
 parsnips-util-proc-macro.path = "../parsnips-util-proc-macro"
+
+# encoding enum conversion
+num_enum = { version = "0.5.7", default-features = false }
