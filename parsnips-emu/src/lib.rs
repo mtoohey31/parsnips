@@ -321,7 +321,7 @@ impl Emulator {
 
         #[allow(clippy::wildcard_imports)]
         use inst::opcode::*;
-        match inst::InstFields::op(&inst) {
+        match inst::InstFields::opcode(&inst) {
             REG => {
                 #[allow(clippy::wildcard_imports)]
                 use inst::funct::*;
