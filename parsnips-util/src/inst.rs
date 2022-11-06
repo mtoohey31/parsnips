@@ -1,7 +1,7 @@
-pub mod funct;
 pub mod opcode;
-pub use funct::Funct;
-pub use opcode::Op;
+pub mod regimm;
+pub mod special;
+pub mod special3;
 
 const MASK5: u32 = (1 << 5) - 1;
 const MASK6: u32 = (1 << 6) - 1;

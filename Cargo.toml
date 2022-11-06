@@ -1,3 +1,10 @@
 [workspace]
 
-members = [ "parsnips-asm", "parsnips-cli", "parsnips-emu", "parsnips-util", "parsnips-parser" ]
+members = [
+  "parsnips-asm",
+  "parsnips-cli",
+  "parsnips-emu",
+  "parsnips-util",
+  "parsnips-util-proc-macro",
+  "parsnips-parser",
+]

@@ -1,14 +1,13 @@
 [package]
-name = "parsnips-util"
+name = "parsnips-util-proc-macro"
 version = "0.1.0"
 edition = "2021"
 authors = ["Matthew Toohey <contact@mtoohey.com>"]
-description = "Utilities for parsnips MIPS tools."
+description = "Macro utilities for parsnips MIPS tools."
 readme = "../README.md"
 homepage = "https://github.com/mtoohey31/parsnips"
 repository = "https://github.com/mtoohey31/parsnips"
 license = "MIT OR Apache-2.0"
 
-[dependencies]
-# encoding_table macro
-parsnips-util-proc-macro.path = "../parsnips-util-proc-macro"
+[lib]
+proc-macro = true

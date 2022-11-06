@@ -29,7 +29,6 @@
 
 pub mod inst;
 pub mod test;
-pub use inst::{Funct, Inst, Op};
 
 use core::mem::size_of;
 use core::mem::transmute;

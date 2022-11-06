@@ -264,9 +264,12 @@ dependencies = [
 name = "parsnips-util"
 version = "0.1.0"
 dependencies = [
- "strum",
- "strum_macros",
+ "parsnips-util-proc-macro",
 ]
+
+[[package]]
+name = "parsnips-util-proc-macro"
+version = "0.1.0"
 
 [[package]]
 name = "pretty_assertions"
