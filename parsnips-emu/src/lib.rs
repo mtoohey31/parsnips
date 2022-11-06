@@ -225,8 +225,20 @@ impl Emulator {
                     Special::BREAK => todo!(),
                     Special::SDBBP => todo!(),
                     Special::SYNC => todo!(),
-                    Special::CLZ => todo!(),
-                    Special::CLO => todo!(),
+                    Special::CLZ => {
+                        if inst.rt() != 0 || inst.sa() != 1 {
+                            self.unpredictable = true;
+                        }
+
+                        *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()].leading_zeros();
+                    }
+                    Special::CLO => {
+                        if inst.rt() != 0 || inst.sa() != 1 {
+                            self.unpredictable = true;
+                        }
+
+                        *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()].leading_ones();
+                    }
                     Special::SOP30 => todo!(),
                     Special::SOP31 => todo!(),
                     Special::SOP32 => todo!(),
