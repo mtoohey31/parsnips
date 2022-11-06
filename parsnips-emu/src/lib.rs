@@ -239,8 +239,50 @@ impl Emulator {
 
                         *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()].leading_ones();
                     }
-                    Special::SOP30 => todo!(),
-                    Special::SOP31 => todo!(),
+                    Special::SOP30 => match inst.sa() {
+                        0b00010 /* MUL */ => {
+                            // this is safe because i32::MAX * i32::MAX < i64::MAX, and we &
+                            // for just the lower bits before we convert back to u32
+                            #[allow(clippy::integer_arithmetic)]
+                            {
+                                let full = (self.gprs[inst.rs()] as i32 as i64)
+                                    * (self.gprs[inst.rt()] as i32 as i64);
+                                *self.gpr_mut(inst.rd()) = (full as u64 & ((1 << 32) - 1)) as u32;
+                            }
+                        },
+                        0b00011 /* MUH */ => {
+                            // same as above, but wit the upper bits instead this time
+                            #[allow(clippy::integer_arithmetic)]
+                            {
+                                let full = (self.gprs[inst.rs()] as i32 as i64)
+                                    * (self.gprs[inst.rt()] as i32 as i64);
+                                *self.gpr_mut(inst.rd()) = (full as u64 >> 32) as u32;
+                            }
+                        },
+                        _ => todo!(), // raise reserved
+                    },
+                    Special::SOP31 => match inst.sa() {
+                        0b00010 /* MULU */ => {
+                            // this is safe because u32::MAX * u32::MAX < u64::MAX, and we &
+                            // for just the lower bits before we convert back to u32
+                            #[allow(clippy::integer_arithmetic)]
+                            {
+                                let full = (self.gprs[inst.rs()] as u64)
+                                    * (self.gprs[inst.rt()] as u64);
+                                *self.gpr_mut(inst.rd()) = (full & ((1 << 32) - 1)) as u32;
+                            }
+                        },
+                        0b00011 /* MUHU */ => {
+                            // same as above, but wit the upper bits instead this time
+                            #[allow(clippy::integer_arithmetic)]
+                            {
+                                let full = (self.gprs[inst.rs()] as u64)
+                                    * (self.gprs[inst.rt()] as u64);
+                                *self.gpr_mut(inst.rd()) = (full >> 32) as u32;
+                            }
+                        },
+                        _ => todo!(), // raise reserved
+                    },
                     Special::SOP32 => todo!(),
                     Special::SOP33 => todo!(),
                     Special::ADD => todo!(),
