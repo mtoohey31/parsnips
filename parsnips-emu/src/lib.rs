@@ -8,14 +8,17 @@
 #![deny(clippy::equatable_if_let)]
 #![deny(clippy::filter_map_next)]
 #![deny(clippy::flat_map_option)]
+// denied to ensure there's no casual regular arithmetic that may panic, can be sparingly allowed
+// for situations where a comment explains why it is safe
+#![deny(clippy::integer_arithmetic)]
 #![deny(clippy::map_unwrap_or)]
-// TODO: uncommet after todo!()'s are removed
+// TODO: uncomment after todo!()'s are removed
 // #![deny(clippy::missing_panics_doc)]
 #![deny(clippy::option_if_let_else)]
 #![deny(clippy::panic)]
 #![deny(clippy::std_instead_of_alloc)]
 #![deny(clippy::std_instead_of_core)]
-// TODO: uncommet after todo!()'s are removed
+// TODO: uncomment after todo!()'s are removed
 // #![deny(clippy::todo)]
 #![deny(clippy::wildcard_enum_match_arm)]
 #![deny(clippy::wildcard_imports)]
@@ -28,16 +31,18 @@
 #![deny(unused_lifetimes)]
 #![deny(unused_qualifications)]
 
+use parsnips_util::IndexAligned;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
-
-use parsnips_util::IndexAligned;
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub struct Emulator {
     gprs: [u32; 32],
     pc: u32,
+    unpredictable: bool,
 }
+
+static mut GARBAGE: u32 = 0;
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl Emulator {
@@ -47,6 +52,7 @@ impl Emulator {
         Self {
             gprs: [0; 32],
             pc: 0,
+            unpredictable: false,
         }
     }
 
@@ -55,8 +61,26 @@ impl Emulator {
     // TODO: figure out how to fix this, even if it means dropping wasm_bindgen and making the js
     // bindings unsafe
 
+    /// Retrieve a mutable reference to the general purose register index, unless index == 0, in
+    /// which case this function returns a mutable reference to a value that will never be read.
+    ///
+    /// This is consistent with the definition of $zero in table 1.2 of the spec, where it
+    /// indicates that non-zero writes should be ignored.
+    fn gpr_mut(&mut self, index: usize) -> &mut u32 {
+        if index == 0 {
+            // TODO: figure out how to express this clearly without this kind of hack, and without
+            // having to use some kind of annoying set_gpr() method
+            return unsafe { &mut GARBAGE };
+        }
+        &mut self.gprs[index]
+    }
+
     pub fn step(&mut self, memory: &mut [u8]) {
+        // TODO: is there any way I can require this through types?
+        assert_eq!(memory.len() % 4, 0);
+
         use parsnips_util::inst::{self, Opcode};
+
         if self.pc as usize >= memory.len() {
             todo!();
         }
@@ -65,7 +89,17 @@ impl Emulator {
         } else {
             todo!();
         };
-        self.pc += 4;
+
+        // this is safe because if self.pc < memory.len() and both self.pc and memory.len() have
+        // % 4 == 0 then self.pc <= memory.len() - 4 for big self.pc, meaning that
+        // self.pc + 4 <= memory.len() so self.pc + 4 <= u32::MAX since memory.len() <= usize::MAX
+        // and u32::MAX <= usize::MAX for all suported architectures
+        // TODO: vet what architectures the final condition is false on and find a way to mark them
+        // as unsupported, since dealing with that condition will be very challenging
+        #[allow(clippy::integer_arithmetic)]
+        {
+            self.pc += 4;
+        }
 
         match if let Some(opcode) = inst::InstFields::opcode(&inst) {
             opcode
@@ -73,19 +107,117 @@ impl Emulator {
             return todo!();
         } {
             Opcode::SPECIAL => {
-                use inst::special::{self, Special};
-                match if let Some(function) = special::SpecialFields::function(&inst) {
+                use inst::special::{Special, SpecialFields};
+
+                match if let Some(function) = inst.function() {
                     function
                 } else {
                     return todo!();
                 } {
-                    Special::SLL => todo!(), // TODO: PAUSE
-                    Special::SRL => todo!(), // TODO: ROTR
-                    Special::SRA => todo!(),
-                    Special::SLLV => todo!(),
-                    Special::LSA => todo!(),
-                    Special::SRLV => todo!(), // TODO: ROTRV
-                    Special::SRAV => todo!(),
+                    Special::SLL => {
+                        if inst.rs() == 0 && inst.rt() == 0 && inst.rd() == 0 {
+                            #[allow(clippy::wildcard_in_or_patterns)]
+                            match inst.sa() {
+                                3 => return todo!(), // EHB
+                                5 => return todo!(), // PAUSE
+                                0 /* NOP */ | _ /* not something else, continue to SHL */ => {}
+                            }
+                        }
+
+                        // shl only panics for rhs > u32::BITS, so this is safe since:
+                        // bit_width(inst.sa()) <= 5 <=> inst.sa() <= 32 == u32::BITS
+                        #[allow(clippy::integer_arithmetic)]
+                        {
+                            *self.gpr_mut(inst.rd()) = self.gprs[inst.rt()] << inst.sa();
+                        }
+                    }
+                    Special::SRL => {
+                        match inst.rd() {
+                            0 /* SRL */ => {},
+                            1 /* ROTR */ => {
+                                *self.gpr_mut(inst.rd()) =
+                                    self.gprs[inst.rt()].rotate_right(inst.sa());
+                                return;
+                            },
+                            _ => self.unpredictable = true,
+                        }
+
+                        // safe by the same justification as SLL
+                        #[allow(clippy::integer_arithmetic)]
+                        {
+                            *self.gpr_mut(inst.rd()) = self.gprs[inst.rt()] >> inst.sa();
+                        }
+                    }
+                    Special::SRA => {
+                        if inst.rs() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        // safe by the same justification as SLL
+                        #[allow(clippy::integer_arithmetic)]
+                        {
+                            *self.gpr_mut(inst.rd()) =
+                                ((self.gprs[inst.rt()] as i32) >> inst.sa()) as u32;
+                        }
+                    }
+                    Special::SLLV => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        // safe by similar justification to SLL, since rhs is determined by the 5
+                        // least-significant bits of $rs
+                        #[allow(clippy::integer_arithmetic)]
+                        {
+                            *self.gpr_mut(inst.rd()) =
+                                self.gprs[inst.rt()] << (self.gprs[inst.rs()] & 0b11111);
+                        }
+                    }
+                    Special::LSA => {
+                        if inst.sa() & 0b11100 != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        // safe by similar justification to SLL, since:
+                        // (inst.sa() | 0b11) + 1 <= 5 < 32 == u32::BITS
+                        #[allow(clippy::integer_arithmetic)]
+                        {
+                            *self.gpr_mut(inst.rd()) = (self.gprs[inst.rs()]
+                                << ((inst.sa() | 0b11) + 1))
+                                + self.gprs[inst.rt()];
+                        }
+                    }
+                    Special::SRLV => {
+                        match inst.sa() {
+                            0 /* SRLV */ => {}
+                            1 /* ROTRV */ => {
+                                *self.gpr_mut(inst.rd()) = self.gprs[inst.rt()]
+                                        .rotate_right(self.gprs[inst.rs()] & 0b11111);
+                                return;
+                            }
+                            _ => self.unpredictable = true,
+                        }
+
+                        // safe by the same justification as SLLV
+                        #[allow(clippy::integer_arithmetic)]
+                        {
+                            *self.gpr_mut(inst.rd()) =
+                                self.gprs[inst.rt()] >> (self.gprs[inst.rs()] & 0b11111);
+                        }
+                    }
+                    Special::SRAV => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        // safe by the same justification as SLLV
+                        #[allow(clippy::integer_arithmetic)]
+                        {
+                            *self.gpr_mut(inst.rd()) = ((self.gprs[inst.rt()] as i32)
+                                >> (self.gprs[inst.rs()] & 0b11111))
+                                as u32;
+                        }
+                    }
                     Special::JALR => todo!(), // TODO: JALR.HB
                     Special::SYSCALL => todo!(),
                     Special::BREAK => todo!(),
@@ -119,6 +251,7 @@ impl Emulator {
             }
             Opcode::REGIMM => {
                 use inst::regimm::{self, Regimm};
+
                 match if let Some(rt) = regimm::RegimmFields::rt(&inst) {
                     rt
                 } else {
@@ -157,6 +290,7 @@ impl Emulator {
             Opcode::MSA => todo!(),
             Opcode::SPECIAL3 => {
                 use inst::special3::{self, Special3};
+
                 match if let Some(function) = special3::Special3Fields::function(&inst) {
                     function
                 } else {

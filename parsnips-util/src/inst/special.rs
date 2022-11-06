@@ -19,10 +19,26 @@ use parsnips_util_proc_macro::from_encoding_table;
 pub enum Special {}
 
 pub trait SpecialFields {
+    fn rs(&self) -> usize;
+    fn rt(&self) -> usize;
+    fn rd(&self) -> usize;
+    fn sa(&self) -> u32;
     fn function(&self) -> Option<Special>;
 }
 
 impl SpecialFields for Inst {
+    fn rs(&self) -> usize {
+        ((self >> 21) & ((1 << 5) - 1)) as usize
+    }
+    fn rt(&self) -> usize {
+        ((self >> 16) & ((1 << 5) - 1)) as usize
+    }
+    fn rd(&self) -> usize {
+        ((self >> 11) & ((1 << 5) - 1)) as usize
+    }
+    fn sa(&self) -> u32 {
+        ((self >> 6) & ((1 << 5) - 1)) as u32
+    }
     fn function(&self) -> Option<Special> {
         ((self & ((1 << 6) - 1)) as u8).try_into().ok()
     }
