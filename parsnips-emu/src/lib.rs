@@ -419,8 +419,29 @@ impl Emulator {
 
                         *self.gpr_mut(inst.rd()) = !(self.gprs[inst.rs()] | self.gprs[inst.rt()]);
                     }
-                    Special::SLT => todo!(),
-                    Special::SLTU => todo!(),
+                    Special::SLT => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        *self.gpr_mut(inst.rd()) =
+                            if (self.gprs[inst.rs()] as i32) < (self.gprs[inst.rt()] as i32) {
+                                1
+                            } else {
+                                0
+                            };
+                    }
+                    Special::SLTU => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        *self.gpr_mut(inst.rd()) = if self.gprs[inst.rs()] < self.gprs[inst.rt()] {
+                            1
+                        } else {
+                            0
+                        };
+                    }
                     Special::TGE => todo!(),
                     Special::TGEU => todo!(),
                     Special::TLT => todo!(),
