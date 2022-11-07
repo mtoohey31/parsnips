@@ -109,6 +109,9 @@ impl Emulator {
             return todo!();
         } {
             Opcode::SPECIAL => {
+                // TODO: investigate if we can enforce that fields only get used once in here
+                // somehow... because bugs resulting from mistaking one register for another seem
+                // very likely...
                 use inst::special::{Special, SpecialFields};
 
                 match if let Some(function) = inst.function() {
@@ -388,10 +391,34 @@ impl Emulator {
                         *self.gpr_mut(inst.rd()) =
                             self.gprs[inst.rs()].wrapping_sub(self.gprs[inst.rd()]);
                     }
-                    Special::AND => todo!(),
-                    Special::OR => todo!(),
-                    Special::XOR => todo!(),
-                    Special::NOR => todo!(),
+                    Special::AND => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()] & self.gprs[inst.rt()];
+                    }
+                    Special::OR => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()] | self.gprs[inst.rt()];
+                    }
+                    Special::XOR => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()] ^ self.gprs[inst.rt()];
+                    }
+                    Special::NOR => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        *self.gpr_mut(inst.rd()) = !(self.gprs[inst.rs()] | self.gprs[inst.rt()]);
+                    }
                     Special::SLT => todo!(),
                     Special::SLTU => todo!(),
                     Special::TGE => todo!(),
