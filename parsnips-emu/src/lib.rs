@@ -296,8 +296,48 @@ impl Emulator {
                         }
                         _ => todo!(), // raise reserved
                     },
-                    Special::SOP32 => todo!(),
-                    Special::SOP33 => todo!(),
+                    Special::SOP32 => match inst.sa() {
+                        // DIV
+                        0b00010 => {
+                            *self.gpr_mut(inst.rd()) = (self.gprs[inst.rs()] as i32)
+                                .checked_div(self.gprs[inst.rt()] as i32)
+                                .unwrap_or_else(|| {
+                                    self.unpredictable = true;
+                                    0
+                                }) as u32;
+                        }
+                        // MOD
+                        0b00011 => {
+                            *self.gpr_mut(inst.rd()) = (self.gprs[inst.rs()] as i32)
+                                .checked_rem(self.gprs[inst.rs()] as i32)
+                                .unwrap_or_else(|| {
+                                    self.unpredictable = true;
+                                    0
+                                }) as u32;
+                        }
+                        _ => todo!(), // raise reserved
+                    },
+                    Special::SOP33 => match inst.sa() {
+                        // DIVU
+                        0b00010 => {
+                            *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()]
+                                .checked_div(self.gprs[inst.rt()])
+                                .unwrap_or_else(|| {
+                                    self.unpredictable = true;
+                                    0
+                                });
+                        }
+                        // MODU
+                        0b00011 => {
+                            *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()]
+                                .checked_rem(self.gprs[inst.rs()])
+                                .unwrap_or_else(|| {
+                                    self.unpredictable = true;
+                                    0
+                                });
+                        }
+                        _ => todo!(), // raise reserved
+                    },
                     Special::ADD => todo!(),
                     Special::ADDU => todo!(),
                     Special::SUB => todo!(),
