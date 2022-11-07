@@ -120,9 +120,14 @@ impl Emulator {
                         if inst.rs() == 0 && inst.rt() == 0 && inst.rd() == 0 {
                             #[allow(clippy::wildcard_in_or_patterns)]
                             match inst.sa() {
-                                3 => return todo!(), // EHB
-                                5 => return todo!(), // PAUSE
-                                0 /* NOP */ | _ /* not something else, continue to SHL */ => {}
+                                // TODO: move these hard-coded constants, as well as similar
+                                // constants further down, into the util crate
+                                // EHB
+                                3 => return todo!(),
+                                // PAUSE
+                                5 => return todo!(),
+                                // NOP, or not something else, so continue to SHL
+                                0 | _ => {}
                             }
                         }
 
@@ -135,12 +140,14 @@ impl Emulator {
                     }
                     Special::SRL => {
                         match inst.rd() {
-                            0 /* SRL */ => {},
-                            1 /* ROTR */ => {
+                            // SRL
+                            0 => {}
+                            // ROTR
+                            1 => {
                                 *self.gpr_mut(inst.rd()) =
                                     self.gprs[inst.rt()].rotate_right(inst.sa());
                                 return;
-                            },
+                            }
                             _ => self.unpredictable = true,
                         }
 
@@ -191,10 +198,12 @@ impl Emulator {
                     }
                     Special::SRLV => {
                         match inst.sa() {
-                            0 /* SRLV */ => {}
-                            1 /* ROTRV */ => {
+                            // SRLV
+                            0 => {}
+                            // ROTRV
+                            1 => {
                                 *self.gpr_mut(inst.rd()) = self.gprs[inst.rt()]
-                                        .rotate_right(self.gprs[inst.rs()] & 0b11111);
+                                    .rotate_right(self.gprs[inst.rs()] & 0b11111);
                                 return;
                             }
                             _ => self.unpredictable = true,
@@ -240,7 +249,8 @@ impl Emulator {
                         *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()].leading_ones();
                     }
                     Special::SOP30 => match inst.sa() {
-                        0b00010 /* MUL */ => {
+                        // MUL
+                        0b00010 => {
                             // this is safe because i32::MAX * i32::MAX < i64::MAX, and we &
                             // for just the lower bits before we convert back to u32
                             #[allow(clippy::integer_arithmetic)]
@@ -249,8 +259,9 @@ impl Emulator {
                                     * (self.gprs[inst.rt()] as i32 as i64);
                                 *self.gpr_mut(inst.rd()) = (full as u64 & ((1 << 32) - 1)) as u32;
                             }
-                        },
-                        0b00011 /* MUH */ => {
+                        }
+                        // MUH
+                        0b00011 => {
                             // same as above, but wit the upper bits instead this time
                             #[allow(clippy::integer_arithmetic)]
                             {
@@ -258,29 +269,31 @@ impl Emulator {
                                     * (self.gprs[inst.rt()] as i32 as i64);
                                 *self.gpr_mut(inst.rd()) = (full as u64 >> 32) as u32;
                             }
-                        },
+                        }
                         _ => todo!(), // raise reserved
                     },
                     Special::SOP31 => match inst.sa() {
-                        0b00010 /* MULU */ => {
+                        // MULU
+                        0b00010 => {
                             // this is safe because u32::MAX * u32::MAX < u64::MAX, and we &
                             // for just the lower bits before we convert back to u32
                             #[allow(clippy::integer_arithmetic)]
                             {
-                                let full = (self.gprs[inst.rs()] as u64)
-                                    * (self.gprs[inst.rt()] as u64);
+                                let full =
+                                    (self.gprs[inst.rs()] as u64) * (self.gprs[inst.rt()] as u64);
                                 *self.gpr_mut(inst.rd()) = (full & ((1 << 32) - 1)) as u32;
                             }
-                        },
-                        0b00011 /* MUHU */ => {
+                        }
+                        // MUHU
+                        0b00011 => {
                             // same as above, but wit the upper bits instead this time
                             #[allow(clippy::integer_arithmetic)]
                             {
-                                let full = (self.gprs[inst.rs()] as u64)
-                                    * (self.gprs[inst.rt()] as u64);
+                                let full =
+                                    (self.gprs[inst.rs()] as u64) * (self.gprs[inst.rt()] as u64);
                                 *self.gpr_mut(inst.rd()) = (full >> 32) as u32;
                             }
-                        },
+                        }
                         _ => todo!(), // raise reserved
                     },
                     Special::SOP32 => todo!(),

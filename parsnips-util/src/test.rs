@@ -9,7 +9,8 @@ macro_rules! ne_byte_arr {
     ($($w:expr),+ $(,)?) => {
         {
             use parsnips_util::count;
-            unsafe{ core::mem::transmute::<[u32; parsnips_util::count!($($w)*)], [u8; count!($($w)*)*4]>([$($w),+]) }
+            let count = parsnips_util::count!($($w)*);
+            unsafe{ core::mem::transmute::<[u32; count], [u8; count*4]>([$($w),+]) }
         }
     }
 }
