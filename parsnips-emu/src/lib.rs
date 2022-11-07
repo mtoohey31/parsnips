@@ -338,10 +338,56 @@ impl Emulator {
                         }
                         _ => todo!(), // raise reserved
                     },
-                    Special::ADD => todo!(),
-                    Special::ADDU => todo!(),
-                    Special::SUB => todo!(),
-                    Special::SUBU => todo!(),
+                    Special::ADD => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        self.gprs[inst.rs()]
+                            .checked_add(self.gprs[inst.rt()])
+                            .map_or_else(
+                                || {
+                                    // as the spec states, $rd is not modified on overflow
+                                    todo!(); // raise integer overflow
+                                },
+                                |sum| {
+                                    *self.gpr_mut(inst.rd()) = sum;
+                                },
+                            );
+                    }
+                    Special::ADDU => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        *self.gpr_mut(inst.rd()) =
+                            self.gprs[inst.rs()].wrapping_add(self.gprs[inst.rd()]);
+                    }
+                    Special::SUB => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        self.gprs[inst.rs()]
+                            .checked_sub(self.gprs[inst.rt()])
+                            .map_or_else(
+                                || {
+                                    // same as ADD here; we don't touch $rd on overflow
+                                    todo!(); // raise integer overflow
+                                },
+                                |sum| {
+                                    *self.gpr_mut(inst.rd()) = sum;
+                                },
+                            );
+                    }
+                    Special::SUBU => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        *self.gpr_mut(inst.rd()) =
+                            self.gprs[inst.rs()].wrapping_sub(self.gprs[inst.rd()]);
+                    }
                     Special::AND => todo!(),
                     Special::OR => todo!(),
                     Special::XOR => todo!(),
