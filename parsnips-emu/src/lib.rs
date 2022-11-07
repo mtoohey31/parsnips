@@ -472,14 +472,34 @@ impl Emulator {
                             todo!();
                         }
                     }
-                    Special::SELEQZ => todo!(),
+                    Special::SELEQZ => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        *self.gpr_mut(inst.rd()) = if self.gprs[inst.rt()] == 0 {
+                            self.gprs[inst.rs()]
+                        } else {
+                            0
+                        };
+                    }
                     Special::TNE => {
                         if self.gprs[inst.rs()] != self.gprs[inst.rt()] {
                             // signal_exception(Exception::Trap)
                             todo!();
                         }
                     }
-                    Special::SELNEZ => todo!(),
+                    Special::SELNEZ => {
+                        if inst.sa() != 0 {
+                            self.unpredictable = true;
+                        }
+
+                        *self.gpr_mut(inst.rd()) = if self.gprs[inst.rt()] != 0 {
+                            self.gprs[inst.rs()]
+                        } else {
+                            0
+                        };
+                    }
                 };
             }
             Opcode::REGIMM => {
