@@ -32,3 +32,21 @@ impl InstFields for Inst {
         ((self >> 26) as u8).try_into().ok()
     }
 }
+
+pub trait ArithIFields {
+    fn rs(&self) -> usize;
+    fn rt(&self) -> usize;
+    fn imm(&self) -> u16;
+}
+
+impl ArithIFields for Inst {
+    fn rs(&self) -> usize {
+        ((self >> 21) & ((1 << 5) - 1)) as usize
+    }
+    fn rt(&self) -> usize {
+        ((self >> 16) & ((1 << 5) - 1)) as usize
+    }
+    fn imm(&self) -> u16 {
+        (self & ((1 << 16) - 1)) as u16
+    }
+}

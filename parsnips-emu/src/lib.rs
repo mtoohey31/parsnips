@@ -527,12 +527,29 @@ impl Emulator {
             Opcode::POP06 => todo!(), // TODO: BLEZ, BGEZALC, BLEZALC, BGEUC
             Opcode::POP07 => todo!(), // TODO: BGTZ, BLTZALC, BGTZALC, BLTUC
             Opcode::POP10 => todo!(), // TODO: BEQZALC, BEQC, BOVC
-            Opcode::ADDIU => todo!(),
+            Opcode::ADDIU => {
+                use inst::ArithIFields;
+
+                *self.gpr_mut(inst.rt()) =
+                    self.gprs[inst.rs()].wrapping_add(inst.imm() as i16 as i32 as u32);
+            }
             Opcode::SLTI => todo!(),
             Opcode::SLTIU => todo!(),
-            Opcode::ANDI => todo!(),
-            Opcode::ORI => todo!(),
-            Opcode::XORI => todo!(),
+            Opcode::ANDI => {
+                use inst::ArithIFields;
+
+                *self.gpr_mut(inst.rt()) = self.gprs[inst.rs()] & (inst.imm() as u32);
+            }
+            Opcode::ORI => {
+                use inst::ArithIFields;
+
+                *self.gpr_mut(inst.rt()) = self.gprs[inst.rs()] | (inst.imm() as u32);
+            }
+            Opcode::XORI => {
+                use inst::ArithIFields;
+
+                *self.gpr_mut(inst.rt()) = self.gprs[inst.rs()] ^ (inst.imm() as u32);
+            }
             Opcode::AUI => todo!(), // TODO: LUI
             Opcode::COP0 => todo!(),
             Opcode::COP1 => todo!(),
