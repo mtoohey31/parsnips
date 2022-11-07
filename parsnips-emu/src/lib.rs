@@ -442,13 +442,43 @@ impl Emulator {
                             0
                         };
                     }
-                    Special::TGE => todo!(),
-                    Special::TGEU => todo!(),
-                    Special::TLT => todo!(),
-                    Special::TLTU => todo!(),
-                    Special::TEQ => todo!(),
+                    Special::TGE => {
+                        if self.gprs[inst.rs()] as i32 >= self.gprs[inst.rt()] as i32 {
+                            // signal_exception(Exception::Trap)
+                            todo!();
+                        }
+                    }
+                    Special::TGEU => {
+                        if self.gprs[inst.rs()] >= self.gprs[inst.rt()] {
+                            // signal_exception(Exception::Trap)
+                            todo!();
+                        }
+                    }
+                    Special::TLT => {
+                        if (self.gprs[inst.rs()] as i32) < (self.gprs[inst.rt()] as i32) {
+                            // signal_exception(Exception::Trap)
+                            todo!();
+                        }
+                    }
+                    Special::TLTU => {
+                        if self.gprs[inst.rs()] < self.gprs[inst.rt()] {
+                            // signal_exception(Exception::Trap)
+                            todo!();
+                        }
+                    }
+                    Special::TEQ => {
+                        if self.gprs[inst.rs()] == self.gprs[inst.rt()] {
+                            // signal_exception(Exception::Trap)
+                            todo!();
+                        }
+                    }
                     Special::SELEQZ => todo!(),
-                    Special::TNE => todo!(),
+                    Special::TNE => {
+                        if self.gprs[inst.rs()] != self.gprs[inst.rt()] {
+                            // signal_exception(Exception::Trap)
+                            todo!();
+                        }
+                    }
                     Special::SELNEZ => todo!(),
                 };
             }
