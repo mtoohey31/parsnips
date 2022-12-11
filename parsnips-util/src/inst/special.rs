@@ -1,9 +1,9 @@
-use super::Inst;
-use num_enum::TryFromPrimitive;
+use bitbybit::bitenum;
 use parsnips_util_proc_macro::from_encoding_table;
 
+#[bitenum(u6, exhaustive: false)]
 #[from_encoding_table[
-    // spec table A.3
+    // spec vol II-A table A.3
     //        000    001    010    011    100      101     110    111
     /* 000 */ SLL  , _    , SRL  , SRA  , SLLV   , LSA   , SRLV , SRAV  ,
     /* 001 */ _    , JALR , _    , _    , SYSCALL, BREAK , SDBBP, SYNC  ,
@@ -14,32 +14,4 @@ use parsnips_util_proc_macro::from_encoding_table;
     /* 110 */ TGE  , TGEU , TLT  , TLTU , TEQ    , SELEQZ, TNE  , SELNEZ,
     /* 111 */ _    , _    , _    , _    , _      , _     , _    , _     ,
 ]]
-#[derive(TryFromPrimitive)]
-#[repr(u8)]
 pub enum Special {}
-
-pub trait SpecialFields {
-    fn rs(&self) -> usize;
-    fn rt(&self) -> usize;
-    fn rd(&self) -> usize;
-    fn sa(&self) -> u32;
-    fn function(&self) -> Option<Special>;
-}
-
-impl SpecialFields for Inst {
-    fn rs(&self) -> usize {
-        ((self >> 21) & ((1 << 5) - 1)) as usize
-    }
-    fn rt(&self) -> usize {
-        ((self >> 16) & ((1 << 5) - 1)) as usize
-    }
-    fn rd(&self) -> usize {
-        ((self >> 11) & ((1 << 5) - 1)) as usize
-    }
-    fn sa(&self) -> u32 {
-        ((self >> 6) & ((1 << 5) - 1)) as u32
-    }
-    fn function(&self) -> Option<Special> {
-        ((self & ((1 << 6) - 1)) as u8).try_into().ok()
-    }
-}

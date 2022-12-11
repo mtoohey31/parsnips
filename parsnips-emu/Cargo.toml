@@ -20,6 +20,8 @@ parsnips-util.path = "../parsnips-util"
 wasm-bindgen = "0.2.80"
 # syscall handler type definitions when targetting wasm32
 js-sys = "0.3.57"
+# encoding representation
+arbitrary-int = "1.2.1"
 
 [dev-dependencies]
 # testing compiled wasm

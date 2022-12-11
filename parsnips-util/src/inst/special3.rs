@@ -1,9 +1,9 @@
-use super::Inst;
-use num_enum::TryFromPrimitive;
+use bitbybit::{bitenum, bitfield};
 use parsnips_util_proc_macro::from_encoding_table;
 
+#[bitenum(u6, exhaustive: false)]
 #[from_encoding_table[
-    // spec table A.6
+    // spec vol II-A table A.6
     //        000    001  010 011     100  101    110  111
     /* 000 */ EXT  , _   , _, _     , INS, _    , _  , _  ,
     /* 001 */ _    , _   , _, _     , _  , _    , _  , CRC,
@@ -14,16 +14,10 @@ use parsnips_util_proc_macro::from_encoding_table;
     /* 110 */ _    , _   , _, _     , _  , PREF , LL , _  ,
     /* 111 */ _    , _   , _, RDHWR , _  , GINV , _  , _  ,
 ]]
-#[derive(TryFromPrimitive)]
-#[repr(u8)]
 pub enum Special3 {}
 
-pub trait Special3Fields {
-    fn function(&self) -> Option<Special3>;
-}
-
-impl Special3Fields for Inst {
-    fn function(&self) -> Option<Special3> {
-        ((self & ((1 << 6) - 1)) as u8).try_into().ok()
-    }
+#[bitfield(u32)]
+pub struct Special3Inst {
+    #[bits(0..=5, rw)]
+    function: Option<Special3>,
 }

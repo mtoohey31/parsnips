@@ -33,6 +33,7 @@
     unused_qualifications,
 )]
 
+use arbitrary_int::u5;
 use parsnips_util::IndexAligned;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -58,17 +59,17 @@ impl Emulator {
         }
     }
 
-    // NOTE: step must take memory as parameter instead of it being provided it to Emulator::new
-    // because wasm_bindgen values cannot have lifetimes
-    // TODO: figure out how to fix this, even if it means dropping wasm_bindgen and making the js
-    // bindings unsafe
+    fn gpr(&self, index: u5) -> u32 {
+        self.gprs[index.value() as usize]
+    }
 
     /// Retrieve a mutable reference to the general purose register index, unless index == 0, in
     /// which case this function returns a mutable reference to a value that will never be read.
     ///
-    /// This is consistent with the definition of $zero in table 1.2 of the spec, where it
+    /// This is consistent with the definition of $zero in vol II-A table 1.2 of the spec, where it
     /// indicates that non-zero writes should be ignored.
-    fn gpr_mut(&mut self, index: usize) -> &mut u32 {
+    fn gpr_mut(&mut self, index: u5) -> &mut u32 {
+        let index = index.value() as usize;
         if index == 0 {
             // TODO: figure out how to express this clearly without this kind of hack, and without
             // having to use some kind of annoying set_gpr() method
@@ -76,6 +77,11 @@ impl Emulator {
         }
         &mut self.gprs[index]
     }
+
+    // NOTE: step must take memory as parameter instead of it being provided it to Emulator::new
+    // because wasm_bindgen values cannot have lifetimes
+    // TODO: figure out how to fix this, even if it means dropping wasm_bindgen and making the js
+    // bindings unsafe
 
     pub fn step(&mut self, memory: &mut [u8]) {
         // TODO: is there any way I can require this through types?
@@ -86,8 +92,8 @@ impl Emulator {
         if self.pc as usize >= memory.len() {
             todo!();
         }
-        let inst: inst::Inst = if self.pc % 4 == 0 {
-            unsafe { memory.index_aligned(self.pc as usize) }
+        let inst = if self.pc % 4 == 0 {
+            inst::Inst::new_with_raw_value(unsafe { memory.index_aligned(self.pc as usize) })
         } else {
             todo!();
         };
@@ -103,26 +109,28 @@ impl Emulator {
             self.pc += 4;
         }
 
-        match if let Some(opcode) = inst::InstFields::opcode(&inst) {
-            opcode
-        } else {
-            return todo!();
+        match match inst.opcode() {
+            Ok(opcode) => opcode,
+            Err(_) => return todo!(),
         } {
             Opcode::SPECIAL => {
                 // TODO: investigate if we can enforce that fields only get used once in here
                 // somehow... because bugs resulting from mistaking one register for another seem
                 // very likely...
-                use inst::special::{Special, SpecialFields};
+                use inst::special::Special;
+                let inst = inst::RInst::new_with_raw_value(inst.raw_value());
 
-                match if let Some(function) = inst.function() {
-                    function
-                } else {
-                    return todo!();
+                match match inst.function() {
+                    Ok(function) => function,
+                    Err(_) => return todo!(),
                 } {
                     Special::SLL => {
-                        if inst.rs() == 0 && inst.rt() == 0 && inst.rd() == 0 {
+                        if inst.rs().value() == 0
+                            && inst.rt().value() == 0
+                            && inst.rd().value() == 0
+                        {
                             #[allow(clippy::wildcard_in_or_patterns)]
-                            match inst.sa() {
+                            match inst.sa().value() {
                                 // TODO: move these hard-coded constants, as well as similar
                                 // constants further down, into the util crate
                                 // EHB
@@ -138,17 +146,17 @@ impl Emulator {
                         // bit_width(inst.sa()) <= 5 <=> inst.sa() <= 32 == u32::BITS
                         #[allow(clippy::integer_arithmetic)]
                         {
-                            *self.gpr_mut(inst.rd()) = self.gprs[inst.rt()] << inst.sa();
+                            *self.gpr_mut(inst.rd()) = self.gpr(inst.rt()) << inst.sa().value();
                         }
                     }
                     Special::SRL => {
-                        match inst.rd() {
+                        match inst.rd().value() {
                             // SRL
                             0 => {}
                             // ROTR
                             1 => {
                                 *self.gpr_mut(inst.rd()) =
-                                    self.gprs[inst.rt()].rotate_right(inst.sa());
+                                    self.gpr(inst.rt()).rotate_right(inst.sa().value() as u32);
                                 return;
                             }
                             _ => self.unpredictable = true,
@@ -157,11 +165,11 @@ impl Emulator {
                         // safe by the same justification as SLL
                         #[allow(clippy::integer_arithmetic)]
                         {
-                            *self.gpr_mut(inst.rd()) = self.gprs[inst.rt()] >> inst.sa();
+                            *self.gpr_mut(inst.rd()) = self.gpr(inst.rt()) >> inst.sa().value();
                         }
                     }
                     Special::SRA => {
-                        if inst.rs() != 0 {
+                        if inst.rs().value() != 0 {
                             self.unpredictable = true;
                         }
 
@@ -169,11 +177,11 @@ impl Emulator {
                         #[allow(clippy::integer_arithmetic)]
                         {
                             *self.gpr_mut(inst.rd()) =
-                                ((self.gprs[inst.rt()] as i32) >> inst.sa()) as u32;
+                                ((self.gpr(inst.rt()) as i32) >> inst.sa().value()) as u32;
                         }
                     }
                     Special::SLLV => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
@@ -182,11 +190,11 @@ impl Emulator {
                         #[allow(clippy::integer_arithmetic)]
                         {
                             *self.gpr_mut(inst.rd()) =
-                                self.gprs[inst.rt()] << (self.gprs[inst.rs()] & 0b11111);
+                                self.gpr(inst.rt()) << (self.gpr(inst.rs()) & 0b11111);
                         }
                     }
                     Special::LSA => {
-                        if inst.sa() & 0b11100 != 0 {
+                        if inst.sa().value() & 0b11100 != 0 {
                             self.unpredictable = true;
                         }
 
@@ -194,19 +202,20 @@ impl Emulator {
                         // (inst.sa() | 0b11) + 1 <= 5 < 32 == u32::BITS
                         #[allow(clippy::integer_arithmetic)]
                         {
-                            *self.gpr_mut(inst.rd()) = (self.gprs[inst.rs()]
-                                << ((inst.sa() | 0b11) + 1))
-                                + self.gprs[inst.rt()];
+                            *self.gpr_mut(inst.rd()) = (self.gpr(inst.rs())
+                                << ((inst.sa().value() | 0b11) + 1))
+                                + self.gpr(inst.rt());
                         }
                     }
                     Special::SRLV => {
-                        match inst.sa() {
+                        match inst.sa().value() {
                             // SRLV
                             0 => {}
                             // ROTRV
                             1 => {
-                                *self.gpr_mut(inst.rd()) = self.gprs[inst.rt()]
-                                    .rotate_right(self.gprs[inst.rs()] & 0b11111);
+                                *self.gpr_mut(inst.rd()) = self
+                                    .gpr(inst.rt())
+                                    .rotate_right(self.gpr(inst.rs()) & 0b11111);
                                 return;
                             }
                             _ => self.unpredictable = true,
@@ -216,19 +225,19 @@ impl Emulator {
                         #[allow(clippy::integer_arithmetic)]
                         {
                             *self.gpr_mut(inst.rd()) =
-                                self.gprs[inst.rt()] >> (self.gprs[inst.rs()] & 0b11111);
+                                self.gpr(inst.rt()) >> (self.gpr(inst.rs()) & 0b11111);
                         }
                     }
                     Special::SRAV => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
                         // safe by the same justification as SLLV
                         #[allow(clippy::integer_arithmetic)]
                         {
-                            *self.gpr_mut(inst.rd()) = ((self.gprs[inst.rt()] as i32)
-                                >> (self.gprs[inst.rs()] & 0b11111))
+                            *self.gpr_mut(inst.rd()) = ((self.gpr(inst.rt()) as i32)
+                                >> (self.gpr(inst.rs()) & 0b11111))
                                 as u32;
                         }
                     }
@@ -238,28 +247,28 @@ impl Emulator {
                     Special::SDBBP => todo!(),
                     Special::SYNC => todo!(),
                     Special::CLZ => {
-                        if inst.rt() != 0 || inst.sa() != 1 {
+                        if inst.rt().value() != 0 || inst.sa().value() != 1 {
                             self.unpredictable = true;
                         }
 
-                        *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()].leading_zeros();
+                        *self.gpr_mut(inst.rd()) = self.gpr(inst.rs()).leading_zeros();
                     }
                     Special::CLO => {
-                        if inst.rt() != 0 || inst.sa() != 1 {
+                        if inst.rt().value() != 0 || inst.sa().value() != 1 {
                             self.unpredictable = true;
                         }
 
-                        *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()].leading_ones();
+                        *self.gpr_mut(inst.rd()) = self.gpr(inst.rs()).leading_ones();
                     }
-                    Special::SOP30 => match inst.sa() {
+                    Special::SOP30 => match inst.sa().value() {
                         // MUL
                         0b00010 => {
                             // this is safe because i32::MAX * i32::MAX < i64::MAX, and we &
                             // for just the lower bits before we convert back to u32
                             #[allow(clippy::integer_arithmetic)]
                             {
-                                let full = (self.gprs[inst.rs()] as i32 as i64)
-                                    * (self.gprs[inst.rt()] as i32 as i64);
+                                let full = (self.gpr(inst.rs()) as i32 as i64)
+                                    * (self.gpr(inst.rt()) as i32 as i64);
                                 *self.gpr_mut(inst.rd()) = (full as u64 & ((1 << 32) - 1)) as u32;
                             }
                         }
@@ -268,14 +277,14 @@ impl Emulator {
                             // same as above, but wit the upper bits instead this time
                             #[allow(clippy::integer_arithmetic)]
                             {
-                                let full = (self.gprs[inst.rs()] as i32 as i64)
-                                    * (self.gprs[inst.rt()] as i32 as i64);
+                                let full = (self.gpr(inst.rs()) as i32 as i64)
+                                    * (self.gpr(inst.rt()) as i32 as i64);
                                 *self.gpr_mut(inst.rd()) = (full as u64 >> 32) as u32;
                             }
                         }
                         _ => todo!(), // raise reserved
                     },
-                    Special::SOP31 => match inst.sa() {
+                    Special::SOP31 => match inst.sa().value() {
                         // MULU
                         0b00010 => {
                             // this is safe because u32::MAX * u32::MAX < u64::MAX, and we &
@@ -283,7 +292,7 @@ impl Emulator {
                             #[allow(clippy::integer_arithmetic)]
                             {
                                 let full =
-                                    (self.gprs[inst.rs()] as u64) * (self.gprs[inst.rt()] as u64);
+                                    (self.gpr(inst.rs()) as u64) * (self.gpr(inst.rt()) as u64);
                                 *self.gpr_mut(inst.rd()) = (full & ((1 << 32) - 1)) as u32;
                             }
                         }
@@ -293,17 +302,17 @@ impl Emulator {
                             #[allow(clippy::integer_arithmetic)]
                             {
                                 let full =
-                                    (self.gprs[inst.rs()] as u64) * (self.gprs[inst.rt()] as u64);
+                                    (self.gpr(inst.rs()) as u64) * (self.gpr(inst.rt()) as u64);
                                 *self.gpr_mut(inst.rd()) = (full >> 32) as u32;
                             }
                         }
                         _ => todo!(), // raise reserved
                     },
-                    Special::SOP32 => match inst.sa() {
+                    Special::SOP32 => match inst.sa().value() {
                         // DIV
                         0b00010 => {
-                            *self.gpr_mut(inst.rd()) = (self.gprs[inst.rs()] as i32)
-                                .checked_div(self.gprs[inst.rt()] as i32)
+                            *self.gpr_mut(inst.rd()) = (self.gpr(inst.rs()) as i32)
+                                .checked_div(self.gpr(inst.rt()) as i32)
                                 .unwrap_or_else(|| {
                                     self.unpredictable = true;
                                     0
@@ -311,8 +320,8 @@ impl Emulator {
                         }
                         // MOD
                         0b00011 => {
-                            *self.gpr_mut(inst.rd()) = (self.gprs[inst.rs()] as i32)
-                                .checked_rem(self.gprs[inst.rs()] as i32)
+                            *self.gpr_mut(inst.rd()) = (self.gpr(inst.rs()) as i32)
+                                .checked_rem(self.gpr(inst.rs()) as i32)
                                 .unwrap_or_else(|| {
                                     self.unpredictable = true;
                                     0
@@ -320,11 +329,12 @@ impl Emulator {
                         }
                         _ => todo!(), // raise reserved
                     },
-                    Special::SOP33 => match inst.sa() {
+                    Special::SOP33 => match inst.sa().value() {
                         // DIVU
                         0b00010 => {
-                            *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()]
-                                .checked_div(self.gprs[inst.rt()])
+                            *self.gpr_mut(inst.rd()) = self
+                                .gpr(inst.rs())
+                                .checked_div(self.gpr(inst.rt()))
                                 .unwrap_or_else(|| {
                                     self.unpredictable = true;
                                     0
@@ -332,8 +342,9 @@ impl Emulator {
                         }
                         // MODU
                         0b00011 => {
-                            *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()]
-                                .checked_rem(self.gprs[inst.rs()])
+                            *self.gpr_mut(inst.rd()) = self
+                                .gpr(inst.rs())
+                                .checked_rem(self.gpr(inst.rs()))
                                 .unwrap_or_else(|| {
                                     self.unpredictable = true;
                                     0
@@ -342,12 +353,12 @@ impl Emulator {
                         _ => todo!(), // raise reserved
                     },
                     Special::ADD => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
-                        self.gprs[inst.rs()]
-                            .checked_add(self.gprs[inst.rt()])
+                        self.gpr(inst.rs())
+                            .checked_add(self.gpr(inst.rt()))
                             .map_or_else(
                                 || {
                                     // as the spec states, $rd is not modified on overflow
@@ -359,20 +370,20 @@ impl Emulator {
                             );
                     }
                     Special::ADDU => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
                         *self.gpr_mut(inst.rd()) =
-                            self.gprs[inst.rs()].wrapping_add(self.gprs[inst.rd()]);
+                            self.gpr(inst.rs()).wrapping_add(self.gpr(inst.rd()));
                     }
                     Special::SUB => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
-                        self.gprs[inst.rs()]
-                            .checked_sub(self.gprs[inst.rt()])
+                        self.gpr(inst.rs())
+                            .checked_sub(self.gpr(inst.rt()))
                             .map_or_else(
                                 || {
                                     // same as ADD here; we don't touch $rd on overflow
@@ -384,118 +395,118 @@ impl Emulator {
                             );
                     }
                     Special::SUBU => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
                         *self.gpr_mut(inst.rd()) =
-                            self.gprs[inst.rs()].wrapping_sub(self.gprs[inst.rd()]);
+                            self.gpr(inst.rs()).wrapping_sub(self.gpr(inst.rd()));
                     }
                     Special::AND => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
-                        *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()] & self.gprs[inst.rt()];
+                        *self.gpr_mut(inst.rd()) = self.gpr(inst.rs()) & self.gpr(inst.rt());
                     }
                     Special::OR => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
-                        *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()] | self.gprs[inst.rt()];
+                        *self.gpr_mut(inst.rd()) = self.gpr(inst.rs()) | self.gpr(inst.rt());
                     }
                     Special::XOR => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
-                        *self.gpr_mut(inst.rd()) = self.gprs[inst.rs()] ^ self.gprs[inst.rt()];
+                        *self.gpr_mut(inst.rd()) = self.gpr(inst.rs()) ^ self.gpr(inst.rt());
                     }
                     Special::NOR => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
-                        *self.gpr_mut(inst.rd()) = !(self.gprs[inst.rs()] | self.gprs[inst.rt()]);
+                        *self.gpr_mut(inst.rd()) = !(self.gpr(inst.rs()) | self.gpr(inst.rt()));
                     }
                     Special::SLT => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
                         *self.gpr_mut(inst.rd()) =
-                            if (self.gprs[inst.rs()] as i32) < (self.gprs[inst.rt()] as i32) {
+                            if (self.gpr(inst.rs()) as i32) < (self.gpr(inst.rt()) as i32) {
                                 1
                             } else {
                                 0
                             };
                     }
                     Special::SLTU => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
-                        *self.gpr_mut(inst.rd()) = if self.gprs[inst.rs()] < self.gprs[inst.rt()] {
+                        *self.gpr_mut(inst.rd()) = if self.gpr(inst.rs()) < self.gpr(inst.rt()) {
                             1
                         } else {
                             0
                         };
                     }
                     Special::TGE => {
-                        if self.gprs[inst.rs()] as i32 >= self.gprs[inst.rt()] as i32 {
+                        if self.gpr(inst.rs()) as i32 >= self.gpr(inst.rt()) as i32 {
                             // signal_exception(Exception::Trap)
                             todo!();
                         }
                     }
                     Special::TGEU => {
-                        if self.gprs[inst.rs()] >= self.gprs[inst.rt()] {
+                        if self.gpr(inst.rs()) >= self.gpr(inst.rt()) {
                             // signal_exception(Exception::Trap)
                             todo!();
                         }
                     }
                     Special::TLT => {
-                        if (self.gprs[inst.rs()] as i32) < (self.gprs[inst.rt()] as i32) {
+                        if (self.gpr(inst.rs()) as i32) < (self.gpr(inst.rt()) as i32) {
                             // signal_exception(Exception::Trap)
                             todo!();
                         }
                     }
                     Special::TLTU => {
-                        if self.gprs[inst.rs()] < self.gprs[inst.rt()] {
+                        if self.gpr(inst.rs()) < self.gpr(inst.rt()) {
                             // signal_exception(Exception::Trap)
                             todo!();
                         }
                     }
                     Special::TEQ => {
-                        if self.gprs[inst.rs()] == self.gprs[inst.rt()] {
+                        if self.gpr(inst.rs()) == self.gpr(inst.rt()) {
                             // signal_exception(Exception::Trap)
                             todo!();
                         }
                     }
                     Special::SELEQZ => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
-                        *self.gpr_mut(inst.rd()) = if self.gprs[inst.rt()] == 0 {
-                            self.gprs[inst.rs()]
+                        *self.gpr_mut(inst.rd()) = if self.gpr(inst.rt()) == 0 {
+                            self.gpr(inst.rs())
                         } else {
                             0
                         };
                     }
                     Special::TNE => {
-                        if self.gprs[inst.rs()] != self.gprs[inst.rt()] {
+                        if self.gpr(inst.rs()) != self.gpr(inst.rt()) {
                             // signal_exception(Exception::Trap)
                             todo!();
                         }
                     }
                     Special::SELNEZ => {
-                        if inst.sa() != 0 {
+                        if inst.sa().value() != 0 {
                             self.unpredictable = true;
                         }
 
-                        *self.gpr_mut(inst.rd()) = if self.gprs[inst.rt()] != 0 {
-                            self.gprs[inst.rs()]
+                        *self.gpr_mut(inst.rd()) = if self.gpr(inst.rt()) != 0 {
+                            self.gpr(inst.rs())
                         } else {
                             0
                         };
@@ -503,12 +514,12 @@ impl Emulator {
                 };
             }
             Opcode::REGIMM => {
-                use inst::regimm::{self, Regimm};
+                use inst::regimm::Regimm;
+                let inst = inst::Imm16Inst::new_with_raw_value(inst.raw_value());
 
-                match if let Some(rt) = regimm::RegimmFields::rt(&inst) {
-                    rt
-                } else {
-                    return todo!();
+                match match Regimm::new_with_raw_value(inst.rt()) {
+                    Ok(rt) => rt,
+                    Err(_) => return todo!(),
                 } {
                     Regimm::BLTZ => todo!(),
                     Regimm::BGEZ => todo!(),
@@ -528,27 +539,28 @@ impl Emulator {
             Opcode::POP07 => todo!(), // TODO: BGTZ, BLTZALC, BGTZALC, BLTUC
             Opcode::POP10 => todo!(), // TODO: BEQZALC, BEQC, BOVC
             Opcode::ADDIU => {
-                use inst::ArithIFields;
+                let inst = inst::Imm16Inst::new_with_raw_value(inst.raw_value());
 
-                *self.gpr_mut(inst.rt()) =
-                    self.gprs[inst.rs()].wrapping_add(inst.imm() as i16 as i32 as u32);
+                *self.gpr_mut(inst.rt()) = self
+                    .gpr(inst.rs())
+                    .wrapping_add(inst.immediate() as i32 as u32);
             }
             Opcode::SLTI => todo!(),
             Opcode::SLTIU => todo!(),
             Opcode::ANDI => {
-                use inst::ArithIFields;
+                let inst = inst::Imm16Inst::new_with_raw_value(inst.raw_value());
 
-                *self.gpr_mut(inst.rt()) = self.gprs[inst.rs()] & (inst.imm() as u32);
+                *self.gpr_mut(inst.rt()) = self.gpr(inst.rs()) & (inst.immediate() as u32);
             }
             Opcode::ORI => {
-                use inst::ArithIFields;
+                let inst = inst::Imm16Inst::new_with_raw_value(inst.raw_value());
 
-                *self.gpr_mut(inst.rt()) = self.gprs[inst.rs()] | (inst.imm() as u32);
+                *self.gpr_mut(inst.rt()) = self.gpr(inst.rs()) | (inst.immediate() as u32);
             }
             Opcode::XORI => {
-                use inst::ArithIFields;
+                let inst = inst::Imm16Inst::new_with_raw_value(inst.raw_value());
 
-                *self.gpr_mut(inst.rt()) = self.gprs[inst.rs()] ^ (inst.imm() as u32);
+                *self.gpr_mut(inst.rt()) = self.gpr(inst.rs()) ^ (inst.immediate() as u32);
             }
             Opcode::AUI => todo!(), // TODO: LUI
             Opcode::COP0 => todo!(),
@@ -559,12 +571,11 @@ impl Emulator {
             Opcode::POP30 => todo!(), // TODO: BNEZALC, BNEC, BNVC
             Opcode::MSA => todo!(),
             Opcode::SPECIAL3 => {
-                use inst::special3::{self, Special3};
+                use inst::special3::{Special3, Special3Inst};
 
-                match if let Some(function) = special3::Special3Fields::function(&inst) {
-                    function
-                } else {
-                    return todo!();
+                match match Special3Inst::new_with_raw_value(inst.raw_value()).function() {
+                    Ok(function) => function,
+                    Err(_) => return todo!(),
                 } {
                     Special3::EXT => todo!(),
                     Special3::INS => todo!(),
