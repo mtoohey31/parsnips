@@ -30,6 +30,7 @@
 )]
 
 pub mod inst;
+pub mod reg;
 pub mod test;
 
 use core::mem::size_of;

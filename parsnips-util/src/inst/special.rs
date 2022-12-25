@@ -1,7 +1,6 @@
 use bitbybit::bitenum;
 use parsnips_util_proc_macro::from_encoding_table;
 
-#[bitenum(u6, exhaustive: false)]
 #[from_encoding_table[
     // spec vol II-A table A.3
     //        000    001    010    011    100      101     110    111
@@ -14,4 +13,5 @@ use parsnips_util_proc_macro::from_encoding_table;
     /* 110 */ TGE  , TGEU , TLT  , TLTU , TEQ    , SELEQZ, TNE  , SELNEZ,
     /* 111 */ _    , _    , _    , _    , _      , _     , _    , _     ,
 ]]
+#[bitenum(u6, exhaustive: false)]
 pub enum Special {}

@@ -3,12 +3,12 @@ use bitbybit::{bitenum, bitfield};
 use parsnips_util_proc_macro::from_encoding_table;
 
 use self::special::Special;
+use super::reg::Reg;
 
 pub mod regimm;
 pub mod special;
 pub mod special3;
 
-#[bitenum(u6, exhaustive: false)]
 #[from_encoding_table[
     // spec vol II-A table A.2
     //        000      001     010   011    100   101   110    111
@@ -21,6 +21,7 @@ pub mod special3;
     /* 110 */ LL     , LWC1  , BC  , PREF , _   , LDC1, POP66, _       ,
     /* 111 */ SC     , SWC1  , BALC, PCREL, _   , SDC1, POP76, _       ,
 ]]
+#[bitenum(u6, exhaustive: false)]
 pub enum Opcode {}
 
 // generic encodings, described in spec vol I-A section 5.7.2
@@ -35,11 +36,11 @@ pub struct Inst {
 #[bitfield(u32)]
 pub struct RInst {
     #[bits(21..=25, rw)]
-    rs: u5,
+    rs: Reg,
     #[bits(16..=20, rw)]
-    rt: u5,
+    rt: Reg,
     #[bits(11..=15, rw)]
-    rd: u5,
+    rd: Reg,
     #[bits(6..=10, rw)]
     sa: u5,
     #[bits(0..=5, rw)]
@@ -49,9 +50,9 @@ pub struct RInst {
 #[bitfield(u32)]
 pub struct Imm16Inst {
     #[bits(21..=25, rw)]
-    rs: u5,
+    rs: Reg,
     #[bits(16..=20, rw)]
-    rt: u5,
+    rt: Reg,
     #[bits(0..=15, rw)]
     immediate: u16,
 }

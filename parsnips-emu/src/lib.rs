@@ -5,7 +5,8 @@
     // TODO: enable this when clippy hits 1.66.0
     // clippy::as_ptr_cast_mut,
     clippy::cast_possible_truncation,
-    clippy::dbg_macro,
+    // TODO: uncomment after dbg!()'s are removed
+    // clippy::dbg_macro,
     clippy::equatable_if_let,
     clippy::filter_map_next,
     clippy::flat_map_option,
@@ -33,8 +34,8 @@
     unused_qualifications,
 )]
 
-use arbitrary_int::u5;
-use parsnips_util::IndexAligned;
+use arbitrary_int::{u5, u6};
+use parsnips_util::{reg::Reg, IndexAligned};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
@@ -59,8 +60,8 @@ impl Emulator {
         }
     }
 
-    fn gpr(&self, index: u5) -> u32 {
-        self.gprs[index.value() as usize]
+    fn gpr(&self, index: Reg) -> u32 {
+        self.gprs[index.raw_value().value() as usize]
     }
 
     /// Retrieve a mutable reference to the general purose register index, unless index == 0, in
@@ -68,11 +69,9 @@ impl Emulator {
     ///
     /// This is consistent with the definition of $zero in vol II-A table 1.2 of the spec, where it
     /// indicates that non-zero writes should be ignored.
-    fn gpr_mut(&mut self, index: u5) -> &mut u32 {
-        let index = index.value() as usize;
+    fn gpr_mut(&mut self, index: Reg) -> &mut u32 {
+        let index = index.raw_value().value() as usize;
         if index == 0 {
-            // TODO: figure out how to express this clearly without this kind of hack, and without
-            // having to use some kind of annoying set_gpr() method
             return unsafe { &mut GARBAGE };
         }
         &mut self.gprs[index]
@@ -83,17 +82,14 @@ impl Emulator {
     // TODO: figure out how to fix this, even if it means dropping wasm_bindgen and making the js
     // bindings unsafe
 
-    pub fn step(&mut self, memory: &mut [u8]) {
-        // TODO: is there any way I can require this through types?
-        assert_eq!(memory.len() % 4, 0);
-
+    pub fn step(&mut self, memory: &mut [u32]) {
         use parsnips_util::inst::{self, Opcode};
 
-        if self.pc as usize >= memory.len() {
+        if (self.pc / 4) as usize >= memory.len() {
             todo!();
         }
         let inst = if self.pc % 4 == 0 {
-            inst::Inst::new_with_raw_value(unsafe { memory.index_aligned(self.pc as usize) })
+            inst::Inst::new_with_raw_value(memory[self.pc as usize / 4])
         } else {
             todo!();
         };
@@ -125,9 +121,9 @@ impl Emulator {
                     Err(_) => return todo!(),
                 } {
                     Special::SLL => {
-                        if inst.rs().value() == 0
-                            && inst.rt().value() == 0
-                            && inst.rd().value() == 0
+                        if inst.rs() == Reg::Zero
+                            && inst.rt() == Reg::Zero
+                            && inst.rd() == Reg::Zero
                         {
                             #[allow(clippy::wildcard_in_or_patterns)]
                             match inst.sa().value() {
@@ -150,7 +146,7 @@ impl Emulator {
                         }
                     }
                     Special::SRL => {
-                        match inst.rd().value() {
+                        match inst.rs().raw_value().value() {
                             // SRL
                             0 => {}
                             // ROTR
@@ -169,7 +165,7 @@ impl Emulator {
                         }
                     }
                     Special::SRA => {
-                        if inst.rs().value() != 0 {
+                        if inst.rs() != Reg::Zero {
                             self.unpredictable = true;
                         }
 
@@ -203,8 +199,9 @@ impl Emulator {
                         #[allow(clippy::integer_arithmetic)]
                         {
                             *self.gpr_mut(inst.rd()) = (self.gpr(inst.rs())
-                                << ((inst.sa().value() | 0b11) + 1))
+                                << ((inst.sa().value() & 0b11) + 1))
                                 + self.gpr(inst.rt());
+                            // TODO: could the added value cause this to overflow and panic?
                         }
                     }
                     Special::SRLV => {
@@ -247,14 +244,14 @@ impl Emulator {
                     Special::SDBBP => todo!(),
                     Special::SYNC => todo!(),
                     Special::CLZ => {
-                        if inst.rt().value() != 0 || inst.sa().value() != 1 {
+                        if inst.rt() != Reg::Zero || inst.sa().value() != 1 {
                             self.unpredictable = true;
                         }
 
                         *self.gpr_mut(inst.rd()) = self.gpr(inst.rs()).leading_zeros();
                     }
                     Special::CLO => {
-                        if inst.rt().value() != 0 || inst.sa().value() != 1 {
+                        if inst.rt() != Reg::Zero || inst.sa().value() != 1 {
                             self.unpredictable = true;
                         }
 
@@ -274,7 +271,7 @@ impl Emulator {
                         }
                         // MUH
                         0b00011 => {
-                            // same as above, but wit the upper bits instead this time
+                            // same as above, but with the upper bits instead this time
                             #[allow(clippy::integer_arithmetic)]
                             {
                                 let full = (self.gpr(inst.rs()) as i32 as i64)
@@ -321,7 +318,7 @@ impl Emulator {
                         // MOD
                         0b00011 => {
                             *self.gpr_mut(inst.rd()) = (self.gpr(inst.rs()) as i32)
-                                .checked_rem(self.gpr(inst.rs()) as i32)
+                                .checked_rem(self.gpr(inst.rt()) as i32)
                                 .unwrap_or_else(|| {
                                     self.unpredictable = true;
                                     0
@@ -375,7 +372,7 @@ impl Emulator {
                         }
 
                         *self.gpr_mut(inst.rd()) =
-                            self.gpr(inst.rs()).wrapping_add(self.gpr(inst.rd()));
+                            self.gpr(inst.rs()).wrapping_add(self.gpr(inst.rt()));
                     }
                     Special::SUB => {
                         if inst.sa().value() != 0 {
@@ -400,7 +397,7 @@ impl Emulator {
                         }
 
                         *self.gpr_mut(inst.rd()) =
-                            self.gpr(inst.rs()).wrapping_sub(self.gpr(inst.rd()));
+                            self.gpr(inst.rs()).wrapping_sub(self.gpr(inst.rt()));
                     }
                     Special::AND => {
                         if inst.sa().value() != 0 {
@@ -517,7 +514,7 @@ impl Emulator {
                 use inst::regimm::Regimm;
                 let inst = inst::Imm16Inst::new_with_raw_value(inst.raw_value());
 
-                match match Regimm::new_with_raw_value(inst.rt()) {
+                match match Regimm::new_with_raw_value(inst.rt().raw_value()) {
                     Ok(rt) => rt,
                     Err(_) => return todo!(),
                 } {
@@ -543,7 +540,7 @@ impl Emulator {
 
                 *self.gpr_mut(inst.rt()) = self
                     .gpr(inst.rs())
-                    .wrapping_add(inst.immediate() as i32 as u32);
+                    .wrapping_add(inst.immediate() as i16 as i32 as u32);
             }
             Opcode::SLTI => todo!(),
             Opcode::SLTIU => todo!(),
@@ -623,5 +620,1443 @@ impl Emulator {
             Opcode::SDC1 => todo!(),
             Opcode::POP76 => todo!(), // TODO: BNEZC, JIALC
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::dbg;
+
+    use super::*;
+    extern crate alloc;
+    extern crate std;
+    use alloc::vec::Vec;
+    use parsnips_util::inst::{special::Special, Imm16Inst, Inst, Opcode, RInst};
+
+    fn run(starting_memory: &[u32]) -> (Emulator, Vec<u32>) {
+        let mut memory = starting_memory.to_vec();
+        let mut emu = Emulator::new();
+        for _ in 0..memory.len() {
+            emu.step(&mut memory);
+        }
+        (emu, memory)
+    }
+
+    #[test]
+    fn sll() {
+        let v = 2;
+        let sa = 4;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rs(Reg::Zero)
+            .with_rt(Reg::T0)
+            .with_immediate(v)
+            .raw_value(),
+            // sll $t1, $t0, sa
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_rd(Reg::T1)
+            .with_sa(u5::new(sa))
+            .with_function(Special::SLL)
+            .raw_value(),
+        ]);
+        assert_eq!((v as u32) << sa, emu.gpr(Reg::T1));
+    }
+
+    #[test]
+    fn srl() {
+        let v = 200;
+        let sa = 4;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v)
+            .raw_value(),
+            // srl $t1, $t0, sa
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_rd(Reg::T1)
+            .with_sa(u5::new(sa))
+            .with_function(Special::SRL)
+            .raw_value(),
+        ]);
+        assert_eq!((v as u32) >> sa, emu.gpr(Reg::T1));
+    }
+
+    #[test]
+    fn rotr() {
+        let v = 0b1010111001001;
+        let sa = 4;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v)
+            .raw_value(),
+            // rotr $t1, $t0, sa
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::new_with_raw_value(u5::new(1)))
+            .with_rt(Reg::T0)
+            .with_rd(Reg::T1)
+            .with_sa(u5::new(sa))
+            .with_function(Special::SRL)
+            .raw_value(),
+        ]);
+        assert_eq!((v as u32).rotate_right(sa as u32), emu.gpr(Reg::T1));
+    }
+
+    #[test]
+    fn sra() {
+        let v = 200;
+        let sa = 4;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v)
+            .raw_value(),
+            // sra $t1, $t0, sa
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_rd(Reg::T1)
+            .with_sa(u5::new(sa))
+            .with_function(Special::SRA)
+            .raw_value(),
+        ]);
+        assert_eq!(((v as i32) >> sa) as u32, emu.gpr(Reg::T1));
+    }
+
+    #[test]
+    fn sllv() {
+        let v = 2;
+        let sa = 4;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v)
+            .raw_value(),
+            // addiu $t1, $zero, sa
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(sa)
+            .raw_value(),
+            // sllv $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T1)
+            .with_rt(Reg::T0)
+            .with_rd(Reg::T2)
+            .with_function(Special::SLLV)
+            .raw_value(),
+        ]);
+        assert_eq!((v as u32) << sa, emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn lsa() {
+        let v1 = 2;
+        let v2 = 5;
+        let sa = 3;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // lsa $t2, $t0, $t1, sa
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_sa(u5::new(sa))
+            .with_function(Special::LSA)
+            .raw_value(),
+        ]);
+        assert_eq!(((v1 as u32) << (sa + 1)) + v2 as u32, emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn srlv() {
+        let v = 200;
+        let sa = 4;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v)
+            .raw_value(),
+            // addiu $t1, $zero, sa
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(sa)
+            .raw_value(),
+            // srlv $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T1)
+            .with_rt(Reg::T0)
+            .with_rd(Reg::T2)
+            .with_function(Special::SRLV)
+            .raw_value(),
+        ]);
+        assert_eq!((v as u32) >> sa, emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn rotrv() {
+        let v = 0b1010111001001;
+        let sa = 4;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v)
+            .raw_value(),
+            // addiu $t1, $zero, sa
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(sa)
+            .raw_value(),
+            // rotrv $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T1)
+            .with_rt(Reg::T0)
+            .with_rd(Reg::T2)
+            .with_sa(u5::new(1))
+            .with_function(Special::SRLV)
+            .raw_value(),
+        ]);
+        assert_eq!((v as u32).rotate_right(sa as u32), emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn srav() {
+        let v: i16 = -200;
+        let sa = 4;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v as u16)
+            .raw_value(),
+            // addiu $t1, $zero, sa
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(sa)
+            .raw_value(),
+            // srav $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T1)
+            .with_rt(Reg::T0)
+            .with_rd(Reg::T2)
+            .with_function(Special::SRAV)
+            .raw_value(),
+        ]);
+        assert_eq!(((v as i32) >> sa) as u32, emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn clz() {
+        let v = i16::MAX as u16;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v)
+            .raw_value(),
+            // clz $t1, $t0
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rd(Reg::T1)
+            .with_function(Special::CLZ)
+            .raw_value(),
+        ]);
+        assert_eq!((v as u32).leading_zeros(), emu.gpr(Reg::T1));
+    }
+
+    #[test]
+    fn clo() {
+        let v = -1_i16;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v as u16)
+            .raw_value(),
+            // clo $t1, $t0
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rd(Reg::T1)
+            .with_function(Special::CLO)
+            .raw_value(),
+        ]);
+        assert_eq!((v as i32).leading_ones(), emu.gpr(Reg::T1));
+    }
+
+    #[test]
+    fn mul() {
+        let v1 = 3;
+        let v2 = -7_i16 as u16;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // mul $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_sa(u5::new(0b10))
+            .with_function(Special::SOP30)
+            .raw_value(),
+        ]);
+        assert_eq!(
+            ((v1 as i16 as i32) * (v2 as i16 as i32)) as u32,
+            emu.gpr(Reg::T2)
+        );
+    }
+
+    #[test]
+    fn muh() {
+        let v1 = 3;
+        let v2 = -7_i16 as u16;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // muh $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_sa(u5::new(0b11))
+            .with_function(Special::SOP30)
+            .raw_value(),
+        ]);
+        assert_eq!(
+            (((v1 as i16 as i64) * (v2 as i16 as i64)) >> 32) as u32,
+            emu.gpr(Reg::T2)
+        );
+    }
+
+    #[test]
+    fn mulu() {
+        let v1 = 3;
+        let v2 = -7_i16 as u16;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // mulu $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_sa(u5::new(0b10))
+            .with_function(Special::SOP31)
+            .raw_value(),
+        ]);
+        assert_eq!(
+            (((v1 as u64) * (v2 as i16 as i32 as u32 as u64)) & ((1 << 32) - 1)) as u32,
+            emu.gpr(Reg::T2)
+        );
+    }
+
+    #[test]
+    fn muhu() {
+        let v1 = 3;
+        let v2 = -7_i16 as u16;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // muhu $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_sa(u5::new(0b11))
+            .with_function(Special::SOP31)
+            .raw_value(),
+        ]);
+        assert_eq!(
+            (((v1 as u64) * (v2 as i16 as i32 as u32 as u64)) >> 32) as u32,
+            emu.gpr(Reg::T2)
+        );
+    }
+
+    #[test]
+    fn div() {
+        let v1 = -7_i16 as u16;
+        let v2 = 3;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // div $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_sa(u5::new(0b10))
+            .with_function(Special::SOP32)
+            .raw_value(),
+        ]);
+        assert_eq!(
+            ((v1 as i16 as i32) / (v2 as i16 as i32)) as u32,
+            emu.gpr(Reg::T2)
+        );
+    }
+
+    #[test]
+    fn r#mod() {
+        let v1 = -7_i16 as u16;
+        let v2 = 3;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // mod $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_sa(u5::new(0b11))
+            .with_function(Special::SOP32)
+            .raw_value(),
+        ]);
+        assert_eq!(
+            ((v1 as i16 as i32) % (v2 as i16 as i32)) as u32,
+            emu.gpr(Reg::T2)
+        );
+    }
+
+    #[test]
+    fn divu() {
+        let v1 = -7_i16 as u16;
+        let v2 = 3;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // divu $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_sa(u5::new(0b10))
+            .with_function(Special::SOP33)
+            .raw_value(),
+        ]);
+        assert_eq!((v1 as i16 as i32 as u32) / v2 as u32, emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn modu() {
+        let v1 = -7_i16 as u16;
+        let v2 = 3;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // modu $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_sa(u5::new(0b11))
+            .with_function(Special::SOP33)
+            .raw_value(),
+        ]);
+        assert_eq!((v1 as i16 as i32 as u32) % (v2 as u32), emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn add() {
+        let v1 = -7_i16 as u16;
+        let v2 = 3;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // add $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::ADD)
+            .raw_value(),
+        ]);
+        assert_eq!(
+            ((v1 as i16 as i32) + (v2 as i16 as i32)) as u32,
+            emu.gpr(Reg::T2)
+        );
+    }
+
+    #[test]
+    fn addu() {
+        let v1 = -7_i16 as u16;
+        let v2 = 3;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // addu $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::ADDU)
+            .raw_value(),
+        ]);
+        assert_eq!((v1 as i16 as i32 as u32) + (v2 as u32), emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn sub() {
+        let v1 = -7_i16 as u16;
+        let v2 = 3;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // sub $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::SUB)
+            .raw_value(),
+        ]);
+        assert_eq!(
+            ((v1 as i16 as i32) - (v2 as i16 as i32)) as u32,
+            emu.gpr(Reg::T2)
+        );
+    }
+
+    #[test]
+    fn subu() {
+        let v1 = -7_i16 as u16;
+        let v2 = 3;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // subu $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::SUBU)
+            .raw_value(),
+        ]);
+        assert_eq!((v1 as i16 as i32 as u32) - (v2 as u32), emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn and() {
+        let v1 = 0b10110101101011;
+        let v2 = 0b01101101110111;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // and $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::AND)
+            .raw_value(),
+        ]);
+        assert_eq!((v1 as u32) & (v2 as u32), emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn or() {
+        let v1 = 0b10110101101011;
+        let v2 = 0b01101101110111;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // or $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::OR)
+            .raw_value(),
+        ]);
+        assert_eq!((v1 as u32) | (v2 as u32), emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn xor() {
+        let v1 = 0b10110101101011;
+        let v2 = 0b01101101110111;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // xor $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::XOR)
+            .raw_value(),
+        ]);
+        assert_eq!((v1 as u32) ^ (v2 as u32), emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn nor() {
+        let v1 = 0b10110101101011;
+        let v2 = 0b01101101110111;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // nor $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::NOR)
+            .raw_value(),
+        ]);
+        assert_eq!(!((v1 as u32) | (v2 as u32)), emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn slt() {
+        let v1 = 1;
+        let v2 = -1_i16 as u16;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // slt $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::SLT)
+            .raw_value(),
+        ]);
+        assert_eq!(
+            if (v1 as i16) < (v2 as i16) { 1 } else { 0 },
+            emu.gpr(Reg::T2)
+        );
+
+        let v1 = -37_i16 as u16;
+        let v2 = -1_i16 as u16;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // slt $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::SLT)
+            .raw_value(),
+        ]);
+        assert_eq!(
+            if (v1 as i16) < (v2 as i16) { 1 } else { 0 },
+            emu.gpr(Reg::T2)
+        );
+    }
+
+    #[test]
+    fn sltu() {
+        let v1 = 9;
+        let v2 = 3;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // sltu $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::SLTU)
+            .raw_value(),
+        ]);
+        assert_eq!(if v1 < v2 { 1 } else { 0 }, emu.gpr(Reg::T2));
+
+        let v1 = -37_i16 as u16;
+        let v2 = -1_i16 as u16;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // sltu $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::SLTU)
+            .raw_value(),
+        ]);
+        assert_eq!(if v1 < v2 { 1 } else { 0 }, emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn seleqz() {
+        let v1 = 9;
+        let v2 = 3;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // seleqz $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::SELEQZ)
+            .raw_value(),
+        ]);
+        assert_eq!(if v2 == 0 { v1 as u32 } else { 0 }, emu.gpr(Reg::T2));
+
+        let v1 = 9;
+        let v2 = 0;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // seleqz $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::SELEQZ)
+            .raw_value(),
+        ]);
+        assert_eq!(if v2 == 0 { v1 as u32 } else { 0 }, emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn selnez() {
+        let v1 = 9;
+        let v2 = 3;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // seleqz $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::SELNEZ)
+            .raw_value(),
+        ]);
+        assert_eq!(if v2 != 0 { v1 as u32 } else { 0 }, emu.gpr(Reg::T2));
+
+        let v1 = 9;
+        let v2 = 0;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // addiu $t1, $zero, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+            // seleqz $t2, $t0, $t1
+            RInst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::SPECIAL)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_rd(Reg::T2)
+            .with_function(Special::SELNEZ)
+            .raw_value(),
+        ]);
+        assert_eq!(if v2 != 0 { v1 as u32 } else { 0 }, emu.gpr(Reg::T2));
+    }
+
+    #[test]
+    fn addiu() {
+        let v = 9;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v)
+            .raw_value(),
+        ]);
+        assert_eq!(v as u32, emu.gpr(Reg::T0));
+
+        let v = -9_i16 as u16;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v)
+            .raw_value(),
+        ]);
+        assert_eq!(v as i16 as i32 as u32, emu.gpr(Reg::T0));
+    }
+
+    #[test]
+    fn andi() {
+        let v1 = 0b11011010110101;
+        let v2 = 0b10101100111011;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // andi $t1, $t0, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ANDI)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+        ]);
+        assert_eq!((v1 & v2) as u32, emu.gpr(Reg::T1));
+    }
+
+    #[test]
+    fn ori() {
+        let v1 = 0b11011010110101;
+        let v2 = 0b10101100111011;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // ori $t1, $t0, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ORI)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+        ]);
+        assert_eq!((v1 | v2) as u32, emu.gpr(Reg::T1));
+    }
+
+    #[test]
+    fn xori() {
+        let v1 = 0b11011010110101;
+        let v2 = 0b10101100111011;
+        let (emu, _) = run(&[
+            // addiu $t0, $zero, v1
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::ADDIU)
+                    .raw_value(),
+            )
+            .with_rt(Reg::T0)
+            .with_immediate(v1)
+            .raw_value(),
+            // xori $t1, $t0, v2
+            Imm16Inst::new_with_raw_value(
+                Inst::new_with_raw_value(0)
+                    .with_opcode(Opcode::XORI)
+                    .raw_value(),
+            )
+            .with_rs(Reg::T0)
+            .with_rt(Reg::T1)
+            .with_immediate(v2)
+            .raw_value(),
+        ]);
+        assert_eq!((v1 ^ v2) as u32, emu.gpr(Reg::T1));
     }
 }
