@@ -77,22 +77,22 @@ parsnips-web/dist: parsnips-emu/pkg parsnips-web/node_modules parsnips-web/node_
 .PHONY: cov-parser
 cov-parser: $(PARSER_DEPS)
 	export LLVM_PROFILE_DIR="$$(mktemp -d)" && \
-		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test $(RUSTFLAGS) --target-dir target-cov -p parsnips-parser && \
+		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test --quiet --target-dir target-cov -p parsnips-parser && \
 		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target-cov/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \
 		rm -rf "$$LLVM_PROFILE_DIR"
 
 .PHONY: cov-asm
 cov-asm: $(ASM_DEPS) $(UTIL_DEPS) $(PARSER_DEPS)
 	export LLVM_PROFILE_DIR="$$(mktemp -d)" && \
-		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test $(RUSTFLAGS) --target-dir target-cov -p parsnips-asm && \
+		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test --quiet --target-dir target-cov -p parsnips-asm && \
 		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target-cov/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \
 		rm -rf "$$LLVM_PROFILE_DIR"
 
 .PHONY: cov-emu
 cov-emu: $(EMU_DEPS) $(UTIL_DEPS) $(PARSER_DEPS)
 	export LLVM_PROFILE_DIR="$$(mktemp -d)" && \
-		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test $(RUSTFLAGS) --target-dir target-cov -p parsnips-emu && \
-		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target-cov/debug/deps -s . -t html --branch --ignore-not-existing -o cov && \
+		LLVM_PROFILE_FILE="$$LLVM_PROFILE_DIR/%p-%m.profraw" RUSTFLAGS="-C instrument-coverage" cargo test --quiet --target-dir target-cov -p parsnips-emu && \
+		grcov "$$LLVM_PROFILE_DIR/"* --binary-path target-cov/debug/deps -s . -t html --branch -o cov && \
 		rm -rf "$$LLVM_PROFILE_DIR"
 
 .PHONY: clean
